@@ -49,7 +49,9 @@ func main() {
 	r.Use(middleware.ChiLogger)
 
 	r.Get("/api/health", healthHandler(pg))
-	usersvc.NewHandler(pg).RegisterRoutes(r)
+	uh := usersvc.NewHandler(pg)
+	uh.RegisterRoutes(r)
+	uh.RegisterAuthRoutes(r)
 
 	server := &http.Server{
 		Addr:         ":" + port,

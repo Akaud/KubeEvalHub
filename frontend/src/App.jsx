@@ -1,35 +1,39 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import React, { useState } from "react";
+import { AuthProvider, useAuth } from "./auth/AuthContext";
+import LoginForm from "./components/LoginForm";
+import RegisterForm from "./components/RegisterForm";
+import Profile from "./components/Profile";
 
-function App() {
-  const [count, setCount] = useState(0)
+function Shell() {
+  const { token } = useAuth();
+  const [mode, setMode] = useState("login");
+
+  if (token) {
+    return (
+      <div style={{ padding: 24 }}>
+        <Profile />
+      </div>
+    );
+  }
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
+    <div style={{ padding: 24 }}>
+      <div style={{ marginBottom: 12 }}>
+        <button onClick={() => setMode("login")}>Login</button>
+        <button onClick={() => setMode("register")} style={{ marginLeft: 8 }}>
+          Register
         </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
       </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+
+      {mode === "login" ? <LoginForm /> : <RegisterForm />}
+    </div>
+  );
 }
 
-export default App
+export default function App() {
+  return (
+    <AuthProvider>
+      <Shell />
+    </AuthProvider>
+  );
+}
