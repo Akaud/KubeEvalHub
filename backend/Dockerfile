@@ -10,5 +10,6 @@ FROM alpine:3.20
 WORKDIR /app
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /src/server /app/server
+COPY --from=builder /src/migrations /app/migrations
 EXPOSE 5000
 CMD ["/app/server"]

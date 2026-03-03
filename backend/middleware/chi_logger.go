@@ -7,10 +7,9 @@ import (
 	"github.com/Akaud/KubeEvalHub/helpers"
 )
 
-func Logger(next http.Handler) http.Handler {
+func ChiLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-
 		next.ServeHTTP(w, r)
 
 		helpers.Log.Info("request",

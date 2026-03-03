@@ -11,14 +11,16 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/Akaud/KubeEvalHub/db"
 	"github.com/Akaud/KubeEvalHub/helpers"
 	"github.com/Akaud/KubeEvalHub/middleware"
+	usersvc "github.com/Akaud/KubeEvalHub/services/users"
 )
 
 func main() {
 	_ = godotenv.Load()
-
 	helpers.InitLogger()
 
 	dbCfg := db.LoadConfigFromEnv()
@@ -35,14 +37,23 @@ func main() {
 	}
 	helpers.Log.Info("db connected", "host", dbCfg.Host, "db", dbCfg.Name)
 
-	port := getEnv("PORT", "8080")
+	if err := db.Migrate(pg); err != nil {
+		helpers.Log.Error("migrations failed", "error", err)
+		os.Exit(1)
+	}
+	helpers.Log.Info("migrations applied")
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", healthHandler(pg))
+	port := getEnv("PORT", "5000")
+
+	r := chi.NewRouter()
+	r.Use(middleware.ChiLogger)
+
+	r.Get("/api/health", healthHandler(pg))
+	usersvc.NewHandler(pg).RegisterRoutes(r)
 
 	server := &http.Server{
 		Addr:         ":" + port,
-		Handler:      middleware.Logger(mux),
+		Handler:      r,
 		ReadTimeout:  time.Duration(getEnvAsInt("READ_TIMEOUT", 5)) * time.Second,
 		WriteTimeout: time.Duration(getEnvAsInt("WRITE_TIMEOUT", 10)) * time.Second,
 		IdleTimeout:  time.Duration(getEnvAsInt("IDLE_TIMEOUT", 120)) * time.Second,
@@ -59,8 +70,6 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
-
-	helpers.Log.Info("server shutting down")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
