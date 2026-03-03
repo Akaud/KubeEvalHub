@@ -1,0 +1,29 @@
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Node (frontend)
+node_modules/
+dist/
+build/
+
+# Go (backend)
+bin/
+*.exe
+*.test
+*.out
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+*.tar
