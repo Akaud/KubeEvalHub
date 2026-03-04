@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
-	"strconv"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -18,17 +16,11 @@ type Config struct {
 	Password string
 	Name     string
 	SSLMode  string
-}
 
-func LoadConfigFromEnv() Config {
-	return Config{
-		Host:     getEnv("DB_HOST", "localhost"),
-		Port:     getEnvAsInt("DB_PORT", 5432),
-		User:     getEnv("DB_USER", "postgres"),
-		Password: getEnv("DB_PASSWORD", "postgres"),
-		Name:     getEnv("DB_NAME", "postgres"),
-		SSLMode:  getEnv("DB_SSLMODE", "disable"),
-	}
+	MaxOpenConns       int
+	MaxIdleConns       int
+	ConnMaxLifetimeSec int
+	PingTimeoutSec     int
 }
 
 func Open(cfg Config) (*sql.DB, error) {
@@ -42,37 +34,24 @@ func Open(cfg Config) (*sql.DB, error) {
 		return nil, err
 	}
 
-	sqlDB.SetMaxOpenConns(getEnvAsInt("DB_MAX_OPEN_CONNS", 10))
-	sqlDB.SetMaxIdleConns(getEnvAsInt("DB_MAX_IDLE_CONNS", 10))
-	sqlDB.SetConnMaxLifetime(
-		time.Duration(getEnvAsInt("DB_CONN_MAX_LIFETIME_SEC", 300)) * time.Second,
-	)
+	if cfg.MaxOpenConns > 0 {
+		sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
+	}
+	if cfg.MaxIdleConns > 0 {
+		sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
+	}
+	if cfg.ConnMaxLifetimeSec > 0 {
+		sqlDB.SetConnMaxLifetime(time.Duration(cfg.ConnMaxLifetimeSec) * time.Second)
+	}
 
 	return sqlDB, nil
 }
 
-func Ping(ctx context.Context, db *sql.DB) error {
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(getEnvAsInt("DB_PING_TIMEOUT_SEC", 3))*time.Second)
+func Ping(ctx context.Context, db *sql.DB, timeoutSec int) error {
+	if timeoutSec <= 0 {
+		timeoutSec = 3
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
 	defer cancel()
 	return db.PingContext(ctx)
-}
-
-func Close(db *sql.DB) error {
-	return db.Close()
-}
-
-func getEnv(key, fallback string) string {
-	if v, ok := os.LookupEnv(key); ok {
-		return v
-	}
-	return fallback
-}
-
-func getEnvAsInt(key string, fallback int) int {
-	if s, ok := os.LookupEnv(key); ok {
-		if v, err := strconv.Atoi(s); err == nil {
-			return v
-		}
-	}
-	return fallback
 }
