@@ -1,0 +1,55 @@
+.auth-container {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #121212;
+}
+
+body {
+  margin: 0;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 40px;
+  background: white;
+  border-radius: 12px;
+  width: 420px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+}
+
+.auth-form h1 {
+  font-size: 32px;
+}
+
+.auth-form input:not([type="checkbox"]) {
+  width: 100%;
+  padding: 14px;
+  font-size: 16px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+.auth-form button {
+  padding: 14px;
+  font-size: 16px;
+  background: black;
+  color: white;
+  border: none;
+  border-radius: 8px;
+}
+
+.switch-text {
+  font-size: 15px;
+  text-align: center;
+}
+
+.link {
+  color: blue;
+  cursor: pointer;
+  text-decoration: underline;
+}
