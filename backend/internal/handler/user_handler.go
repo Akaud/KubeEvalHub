@@ -1,9 +1,7 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"strconv"
 
@@ -31,10 +29,6 @@ type loginRequest struct {
 
 type loginResponse struct {
 	Token string `json:"token"`
-}
-
-type errorResponse struct {
-	Error string `json:"error"`
 }
 
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
@@ -70,10 +64,32 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, user)
 }
 
+func requireSameUser(r *http.Request, targetUserID int64) error {
+	authUserID, ok := getAuthenticatedUserID(r)
+	if !ok || authUserID <= 0 {
+		return service.ErrInvalidCredentials
+	}
+
+	if authUserID != targetUserID {
+		return errors.New("forbidden")
+	}
+
+	return nil
+}
+
 func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	id, err := parseIDParam(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if err := requireSameUser(r, id); err != nil {
+		if errors.Is(err, service.ErrInvalidCredentials) {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 
@@ -96,6 +112,15 @@ func (h *Handler) PatchUser(w http.ResponseWriter, r *http.Request) {
 	id, err := parseIDParam(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if err := requireSameUser(r, id); err != nil {
+		if errors.Is(err, service.ErrInvalidCredentials) {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 
@@ -126,6 +151,15 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := requireSameUser(r, id); err != nil {
+		if errors.Is(err, service.ErrInvalidCredentials) {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	if err := h.userService.DeleteUser(r.Context(), id); err != nil {
 		writeServiceError(w, err)
 		return
@@ -142,33 +176,6 @@ func parseIDParam(r *http.Request) (int64, error) {
 	return id, nil
 }
 
-func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-
-	if err := dec.Decode(dst); err != nil {
-		return err
-	}
-
-	if err := dec.Decode(&struct{}{}); err != io.EOF {
-		return errors.New("request body must contain a single JSON object")
-	}
-
-	return nil
-}
-
-func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, errorResponse{Error: message})
-}
-
 func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrInvalidUserID),
@@ -176,7 +183,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		errors.Is(err, service.ErrInvalidUserEmail),
 		errors.Is(err, service.ErrInvalidUserPassword):
 		writeError(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, service.ErrInvalidCredentials):
+	case errors.Is(err, service.ErrInvalidCredentials),
+		errors.Is(err, service.ErrInvalidToken):
 		writeError(w, http.StatusUnauthorized, err.Error())
 	case errors.Is(err, service.ErrUserNotFound):
 		writeError(w, http.StatusNotFound, err.Error())

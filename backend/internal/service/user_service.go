@@ -20,6 +20,7 @@ var (
 	ErrInvalidUserPassword    = errors.New("invalid user password")
 	ErrInvalidCredentials     = errors.New("invalid credentials")
 	ErrInvalidLoginIdentifier = errors.New("invalid login identifier")
+	ErrInvalidToken           = errors.New("invalid token")
 	ErrUserNotFound           = errors.New("user not found")
 	ErrEmailAlreadyExists     = errors.New("email already exists")
 )
@@ -299,4 +300,31 @@ func (s *UserService) AuthenticateUser(ctx context.Context, identifier, password
 	}
 
 	return signedToken, nil
+}
+
+func (s *UserService) ValidateToken(ctx context.Context, tokenString string) (int64, error) {
+	if strings.TrimSpace(tokenString) == "" {
+		return 0, ErrInvalidToken
+	}
+
+	token, err := jwt.ParseWithClaims(tokenString, &authClaims{}, func(token *jwt.Token) (any, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, ErrInvalidToken
+		}
+		return s.jwtSecret, nil
+	})
+	if err != nil {
+		return 0, ErrInvalidToken
+	}
+
+	claims, ok := token.Claims.(*authClaims)
+	if !ok || !token.Valid {
+		return 0, ErrInvalidToken
+	}
+
+	if claims.UserID <= 0 {
+		return 0, ErrInvalidToken
+	}
+
+	return claims.UserID, nil
 }
