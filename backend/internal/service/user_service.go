@@ -14,18 +14,20 @@ import (
 )
 
 var (
-	ErrInvalidUserID       = errors.New("invalid user id")
-	ErrInvalidUserName     = errors.New("invalid user name")
-	ErrInvalidUserEmail    = errors.New("invalid user email")
-	ErrInvalidUserPassword = errors.New("invalid user password")
-	ErrInvalidCredentials  = errors.New("invalid credentials")
-	ErrUserNotFound        = errors.New("user not found")
-	ErrEmailAlreadyExists  = errors.New("email already exists")
+	ErrInvalidUserID          = errors.New("invalid user id")
+	ErrInvalidUserName        = errors.New("invalid user name")
+	ErrInvalidUserEmail       = errors.New("invalid user email")
+	ErrInvalidUserPassword    = errors.New("invalid user password")
+	ErrInvalidCredentials     = errors.New("invalid credentials")
+	ErrInvalidLoginIdentifier = errors.New("invalid login identifier")
+	ErrUserNotFound           = errors.New("user not found")
+	ErrEmailAlreadyExists     = errors.New("email already exists")
 )
 
 type UserRepository interface {
 	Create(ctx context.Context, name, email, password string) (*model.User, error)
 	GetByEmail(ctx context.Context, email string) (*model.User, error)
+	GetByName(ctx context.Context, name string) (*model.User, error)
 	Update(ctx context.Context, id int64, name, email, password string) (*model.User, error)
 	Delete(ctx context.Context, id int64) error
 	Patch(ctx context.Context, id int64, name, email, password *string) (*model.User, error)
@@ -65,6 +67,14 @@ func normalizePassword(password string) (string, error) {
 		return "", ErrInvalidUserPassword
 	}
 	return password, nil
+}
+
+func normalizeLoginIdentifier(identifier string) (string, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return "", ErrInvalidLoginIdentifier
+	}
+	return identifier, nil
 }
 
 func hashPassword(password string) (string, error) {
@@ -224,8 +234,8 @@ type authClaims struct {
 	jwt.RegisteredClaims
 }
 
-func (s *UserService) AuthenticateUser(ctx context.Context, email, password string) (string, error) {
-	email, err := normalizeEmail(email)
+func (s *UserService) AuthenticateUser(ctx context.Context, identifier, password string) (string, error) {
+	identifier, err := normalizeLoginIdentifier(identifier)
 	if err != nil {
 		return "", err
 	}
@@ -235,12 +245,34 @@ func (s *UserService) AuthenticateUser(ctx context.Context, email, password stri
 		return "", err
 	}
 
-	user, err := s.repo.GetByEmail(ctx, email)
-	if err != nil {
-		if errors.Is(err, repository.ErrUserNotFound) {
+	var user *model.User
+
+	if strings.Contains(identifier, "@") {
+		email, err := normalizeEmail(identifier)
+		if err != nil {
 			return "", ErrInvalidCredentials
 		}
-		return "", err
+
+		user, err = s.repo.GetByEmail(ctx, email)
+		if err != nil {
+			if errors.Is(err, repository.ErrUserNotFound) {
+				return "", ErrInvalidCredentials
+			}
+			return "", err
+		}
+	} else {
+		name, err := normalizeName(identifier)
+		if err != nil {
+			return "", ErrInvalidCredentials
+		}
+
+		user, err = s.repo.GetByName(ctx, name)
+		if err != nil {
+			if errors.Is(err, repository.ErrUserNotFound) {
+				return "", ErrInvalidCredentials
+			}
+			return "", err
+		}
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
@@ -253,7 +285,7 @@ func (s *UserService) AuthenticateUser(ctx context.Context, email, password stri
 	claims := authClaims{
 		UserID: user.ID,
 		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   email,
+			Subject:   user.Email,
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 		},

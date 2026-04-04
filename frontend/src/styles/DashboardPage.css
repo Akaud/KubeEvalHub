@@ -1,0 +1,259 @@
+.dashboard-layout {
+  min-height: 100vh;
+  display: flex;
+  gap: 24px;
+  padding: 24px;
+  background: #f3f4f6;
+  box-sizing: border-box;
+}
+
+.dashboard-sidebar {
+  width: 260px;
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+}
+
+.sidebar-brand h2 {
+  margin: 0;
+  font-size: 30px;
+  color: #111827;
+}
+
+.sidebar-brand p {
+  margin: 8px 0 0;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 32px;
+  flex: 1;
+}
+
+.sidebar-item,
+.sidebar-logout {
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 16px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 16px;
+  color: #1f2937;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.sidebar-item:hover,
+.sidebar-logout:hover {
+  background: #f9fafb;
+  border-color: #e5e7eb;
+}
+
+.sidebar-item.active {
+  background: #166534;
+  color: #ffffff;
+}
+
+.sidebar-logout {
+  margin-top: 24px;
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.dashboard-content {
+  flex: 1;
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 32px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+}
+
+.dashboard-header h1 {
+  margin: 0;
+  font-size: 42px;
+  color: #111827;
+}
+
+.dashboard-header p {
+  margin: 10px 0 0;
+  color: #6b7280;
+  font-size: 16px;
+}
+
+.dashboard-cards {
+  margin-top: 32px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.dashboard-card {
+  min-height: 180px;
+  background: #f9fafb;
+  border-radius: 20px;
+  padding: 24px;
+  box-sizing: border-box;
+  border: 1px solid #e5e7eb;
+}
+
+.dashboard-card h3 {
+  margin: 0 0 12px;
+  font-size: 24px;
+  color: #111827;
+}
+
+.dashboard-card p {
+  margin: 0;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.dashboard-card-primary {
+  background: linear-gradient(135deg, #166534, #22c55e);
+  border: none;
+}
+
+.dashboard-card-primary h3,
+.dashboard-card-primary p {
+  color: #ffffff;
+}
+
+@media (max-width: 900px) {
+  .dashboard-layout {
+    flex-direction: column;
+  }
+
+  .dashboard-sidebar {
+    width: 100%;
+  }
+
+  .dashboard-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+body.theme-light {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+body.theme-dark {
+  background: #111827;
+  color: #f9fafb;
+}
+
+.dashboard-layout-dark {
+  background: #111827;
+}
+
+.dashboard-layout-dark .dashboard-sidebar {
+  background: #1f2937;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.dashboard-layout-dark .sidebar-brand h2,
+.dashboard-layout-dark .dashboard-header h1,
+.dashboard-layout-dark .dashboard-card h3,
+.dashboard-layout-dark .settings-card h3 {
+  color: #f9fafb;
+}
+
+.dashboard-layout-dark .sidebar-brand p,
+.dashboard-layout-dark .dashboard-header p,
+.dashboard-layout-dark .dashboard-card p,
+.dashboard-layout-dark .settings-card p,
+.dashboard-layout-dark .sidebar-item {
+  color: #d1d5db;
+}
+
+.dashboard-layout-dark .sidebar-item:hover {
+  background: #374151;
+  border-color: #4b5563;
+}
+
+.dashboard-layout-dark .dashboard-content {
+  background: #1f2937;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.dashboard-layout-dark .dashboard-card,
+.dashboard-layout-dark .settings-card {
+  background: #111827;
+  border-color: #374151;
+}
+
+.settings-panel {
+  margin-top: 32px;
+}
+
+.settings-card {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 20px;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.settings-card h3 {
+  margin: 0 0 12px;
+  font-size: 24px;
+  color: #111827;
+}
+
+.settings-card p {
+  margin: 0 0 20px;
+  color: #6b7280;
+}
+
+.theme-toggle {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.theme-button {
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.theme-button:hover {
+  border-color: #22c55e;
+}
+
+.theme-button.active {
+  background: #166534;
+  color: #ffffff;
+  border-color: #166534;
+}
+
+.dashboard-layout-dark .theme-button {
+  background: #1f2937;
+  border-color: #4b5563;
+  color: #e5e7eb;
+}
+
+.dashboard-layout-dark .theme-button.active {
+  background: #22c55e;
+  border-color: #22c55e;
+  color: #ffffff;
+}

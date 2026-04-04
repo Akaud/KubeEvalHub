@@ -33,10 +33,10 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault()
 
-    const email = form.identifier.trim()
+    const identifier = form.identifier.trim()
     const password = form.password.trim()
 
-    if (!email || !password) return
+    if (!identifier || !password) return
 
     setError('')
 
@@ -44,13 +44,13 @@ export default function LoginPage() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ identifier, password }),
       })
 
-      const data = await res.json()
+      const data = await res.json().catch(() => null)
 
       if (!res.ok) {
-        setError(data.error || 'Login failed')
+        setError(data?.error || 'Login failed')
         return
       }
 
@@ -69,7 +69,7 @@ export default function LoginPage() {
         <input
           type="text"
           name="identifier"
-          placeholder="Email"
+          placeholder="Email or username"
           value={form.identifier}
           onChange={handleChange}
           required
@@ -84,7 +84,7 @@ export default function LoginPage() {
           required
         />
 
-        {error && <p>{error}</p>}
+        {error && <p className="error-text">{error}</p>}
 
         <button type="submit">Login</button>
 

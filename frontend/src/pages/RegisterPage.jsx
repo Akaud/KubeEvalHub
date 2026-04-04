@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { FiEye, FiEyeOff } from 'react-icons/fi'
 import '../styles/RegisterPage.css'
 import { useNavigate } from 'react-router-dom'
@@ -17,11 +17,21 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+  const [toast, setToast] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const navigate = useNavigate()
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+  useEffect(() => {
+    if (!toast) return
+
+    const timer = setTimeout(() => {
+      setToast('')
+    }, 1500)
+
+    return () => clearTimeout(timer)
+  }, [toast])
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
@@ -61,7 +71,7 @@ export default function RegisterPage() {
     const confirmPassword = form.confirmPassword.trim()
 
     setError('')
-    setSuccess('')
+    setToast('')
 
     if (!username || !email || !password || !confirmPassword) {
       setError('All fields are required')
@@ -103,8 +113,6 @@ export default function RegisterPage() {
         return
       }
 
-      setSuccess('Registration successful. Redirecting to login...')
-
       setForm({
         username: '',
         email: '',
@@ -114,6 +122,7 @@ export default function RegisterPage() {
       })
       setIsEmailValid(false)
       setPasswordsMatch(true)
+      setToast('Registration successful')
 
       setTimeout(() => {
         navigate('/login', { replace: true })
@@ -127,6 +136,8 @@ export default function RegisterPage() {
 
   return (
     <div className="auth-container">
+      {toast && <div className="toast toast-success">{toast}</div>}
+
       <form className="auth-form" onSubmit={handleSubmit}>
         <h1>Register</h1>
 
@@ -197,7 +208,6 @@ export default function RegisterPage() {
         )}
 
         {error && <p className="error-text">{error}</p>}
-        {success && <p className="success-text">{success}</p>}
 
         <label className="checkbox">
           <input

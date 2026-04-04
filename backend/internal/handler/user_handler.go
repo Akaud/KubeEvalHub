@@ -25,8 +25,8 @@ type patchUserRequest struct {
 }
 
 type loginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Identifier string `json:"identifier"`
+	Password   string `json:"password"`
 }
 
 type loginResponse struct {
@@ -44,7 +44,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.userService.AuthenticateUser(r.Context(), req.Email, req.Password)
+	token, err := h.userService.AuthenticateUser(r.Context(), req.Identifier, req.Password)
 	if err != nil {
 		writeServiceError(w, err)
 		return
