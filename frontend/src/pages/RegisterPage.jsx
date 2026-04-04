@@ -3,7 +3,7 @@ import { FiEye, FiEyeOff } from 'react-icons/fi'
 import '../styles/RegisterPage.css'
 import { useNavigate } from 'react-router-dom'
 
-export default function RegisterPage({ goToLogin }) {
+export default function RegisterPage() {
   const [form, setForm] = useState({
     username: '',
     email: '',
@@ -16,8 +16,11 @@ export default function RegisterPage({ goToLogin }) {
   const [passwordsMatch, setPasswordsMatch] = useState(true)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const navigate = useNavigate()
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
+  const navigate = useNavigate()
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
   const handleChange = (e) => {
@@ -45,9 +48,11 @@ export default function RegisterPage({ goToLogin }) {
     } else {
       setPasswordsMatch(true)
     }
+
+    setError('')
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
 
     const username = form.username.trim()
@@ -55,12 +60,69 @@ export default function RegisterPage({ goToLogin }) {
     const password = form.password.trim()
     const confirmPassword = form.confirmPassword.trim()
 
-    if (!username || !email || !password || !confirmPassword) return
-    if (!emailRegex.test(email)) return
-    if (password !== confirmPassword) return
-    if (!form.consent) return
+    setError('')
+    setSuccess('')
 
-    console.log({ username, email, password })
+    if (!username || !email || !password || !confirmPassword) {
+      setError('All fields are required')
+      return
+    }
+
+    if (!emailRegex.test(email)) {
+      setError('Invalid email format')
+      return
+    }
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match')
+      return
+    }
+
+    if (!form.consent) {
+      setError('You must agree to the policy')
+      return
+    }
+
+    try {
+      setIsSubmitting(true)
+
+      const res = await fetch('/api/users/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: username,
+          email,
+          password,
+        }),
+      })
+
+      const data = await res.json().catch(() => null)
+
+      if (!res.ok) {
+        setError(data?.error || 'Registration failed')
+        return
+      }
+
+      setSuccess('Registration successful. Redirecting to login...')
+
+      setForm({
+        username: '',
+        email: '',
+        password: '',
+        confirmPassword: '',
+        consent: false,
+      })
+      setIsEmailValid(false)
+      setPasswordsMatch(true)
+
+      setTimeout(() => {
+        navigate('/login', { replace: true })
+      }, 1500)
+    } catch {
+      setError('Network error')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -134,6 +196,9 @@ export default function RegisterPage({ goToLogin }) {
           <p className="error-text">Passwords do not match</p>
         )}
 
+        {error && <p className="error-text">{error}</p>}
+        {success && <p className="success-text">{success}</p>}
+
         <label className="checkbox">
           <input
             type="checkbox"
@@ -147,7 +212,9 @@ export default function RegisterPage({ goToLogin }) {
           </span>
         </label>
 
-        <button type="submit">Register</button>
+        <button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? 'Registering...' : 'Register'}
+        </button>
 
         <p className="switch-text link" onClick={() => navigate('/login')}>
           I already have an account

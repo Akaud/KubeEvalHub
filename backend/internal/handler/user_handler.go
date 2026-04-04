@@ -24,8 +24,33 @@ type patchUserRequest struct {
 	Password *string `json:"password"`
 }
 
+type loginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type loginResponse struct {
+	Token string `json:"token"`
+}
+
 type errorResponse struct {
 	Error string `json:"error"`
+}
+
+func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
+	var req loginRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	token, err := h.userService.AuthenticateUser(r.Context(), req.Email, req.Password)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, loginResponse{Token: token})
 }
 
 func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +73,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	id, err := parseIDParam(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid user id")
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -70,7 +95,7 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) PatchUser(w http.ResponseWriter, r *http.Request) {
 	id, err := parseIDParam(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid user id")
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -97,7 +122,7 @@ func (h *Handler) PatchUser(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	id, err := parseIDParam(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid user id")
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -110,10 +135,9 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func parseIDParam(r *http.Request) (int64, error) {
-	rawID := chi.URLParam(r, "id")
-	id, err := strconv.ParseInt(rawID, 10, 64)
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || id <= 0 {
-		return 0, errors.New("invalid user id")
+		return 0, service.ErrInvalidUserID
 	}
 	return id, nil
 }
@@ -138,9 +162,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(value); err != nil {
-		// log error
-	}
+	_ = json.NewEncoder(w).Encode(value)
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
@@ -151,8 +173,11 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrInvalidUserID),
 		errors.Is(err, service.ErrInvalidUserName),
-		errors.Is(err, service.ErrInvalidUserEmail):
+		errors.Is(err, service.ErrInvalidUserEmail),
+		errors.Is(err, service.ErrInvalidUserPassword):
 		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrInvalidCredentials):
+		writeError(w, http.StatusUnauthorized, err.Error())
 	case errors.Is(err, service.ErrUserNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, service.ErrEmailAlreadyExists):

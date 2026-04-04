@@ -54,6 +54,33 @@ func (r *UserRepository) Create(ctx context.Context, name, email, password strin
 	return &user, nil
 }
 
+func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*model.User, error) {
+	const query = `
+		SELECT id, name, email, password, created_at, updated_at
+		FROM users
+		WHERE email = $1
+	`
+
+	var user model.User
+
+	err := r.pool.QueryRow(ctx, query, email).Scan(
+		&user.ID,
+		&user.Name,
+		&user.Email,
+		&user.Password,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("get user by email: %w", err)
+	}
+
+	return &user, nil
+}
+
 func (r *UserRepository) Update(ctx context.Context, id int64, name, email, password string) (*model.User, error) {
 	const query = `
 		UPDATE users

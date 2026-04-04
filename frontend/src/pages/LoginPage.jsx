@@ -1,15 +1,23 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import '../styles/LoginPage.css'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 
-export default function LoginPage({ goToRegister }) {
+export default function LoginPage() {
   const [form, setForm] = useState({
     identifier: '',
     password: '',
   })
-
   const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState('')
   const navigate = useNavigate()
+  const { login, isAuthenticated } = useAuth()
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [isAuthenticated, navigate])
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -22,15 +30,35 @@ export default function LoginPage({ goToRegister }) {
     setForm((prev) => ({ ...prev, [name]: nextValue }))
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
 
-    const identifier = form.identifier.trim()
+    const email = form.identifier.trim()
     const password = form.password.trim()
 
-    if (!identifier || !password) return
+    if (!email || !password) return
 
-    console.log({ identifier, password })
+    setError('')
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setError(data.error || 'Login failed')
+        return
+      }
+
+      login(data.token)
+      navigate('/dashboard', { replace: true })
+    } catch {
+      setError('Network error')
+    }
   }
 
   return (
@@ -41,7 +69,7 @@ export default function LoginPage({ goToRegister }) {
         <input
           type="text"
           name="identifier"
-          placeholder="Email or Username"
+          placeholder="Email"
           value={form.identifier}
           onChange={handleChange}
           required
@@ -55,6 +83,8 @@ export default function LoginPage({ goToRegister }) {
           onChange={handleChange}
           required
         />
+
+        {error && <p>{error}</p>}
 
         <button type="submit">Login</button>
 

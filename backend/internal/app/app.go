@@ -22,13 +22,15 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 	r.Use(middleware.Recoverer)
 
 	userRepo := repository.NewUserRepository(pool)
-	userService := service.NewUserService(userRepo)
+	userService := service.NewUserService(userRepo, cfg.JWTSecret)
 	h := handler.New(userService)
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+
+	r.Post("/auth/login", h.Login)
 
 	r.Route("/users", func(r chi.Router) {
 		r.Post("/", h.CreateUser)

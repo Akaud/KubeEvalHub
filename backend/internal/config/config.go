@@ -21,6 +21,7 @@ type Config struct {
 	DBPassword string
 	DBName     string
 	DBSSLMode  string
+	JWTSecret  string
 }
 
 // Load reads environment variables and validates them.
@@ -37,6 +38,7 @@ func Load() *Config {
 		DBPassword: os.Getenv("DB_PASSWORD"), // optional
 		DBName:     mustGetEnv("DB_NAME"),
 		DBSSLMode:  mustGetEnv("DB_SSLMODE"),
+		JWTSecret:  mustGetEnv("JWT_SECRET"),
 	}
 
 	return cfg

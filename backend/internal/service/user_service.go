@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"backend/internal/model"
 	"backend/internal/repository"
 
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -16,23 +18,29 @@ var (
 	ErrInvalidUserName     = errors.New("invalid user name")
 	ErrInvalidUserEmail    = errors.New("invalid user email")
 	ErrInvalidUserPassword = errors.New("invalid user password")
+	ErrInvalidCredentials  = errors.New("invalid credentials")
 	ErrUserNotFound        = errors.New("user not found")
 	ErrEmailAlreadyExists  = errors.New("email already exists")
 )
 
 type UserRepository interface {
 	Create(ctx context.Context, name, email, password string) (*model.User, error)
+	GetByEmail(ctx context.Context, email string) (*model.User, error)
 	Update(ctx context.Context, id int64, name, email, password string) (*model.User, error)
 	Delete(ctx context.Context, id int64) error
 	Patch(ctx context.Context, id int64, name, email, password *string) (*model.User, error)
 }
 
 type UserService struct {
-	repo UserRepository
+	repo      UserRepository
+	jwtSecret []byte
 }
 
-func NewUserService(repo UserRepository) *UserService {
-	return &UserService{repo: repo}
+func NewUserService(repo UserRepository, jwtSecret string) *UserService {
+	return &UserService{
+		repo:      repo,
+		jwtSecret: []byte(jwtSecret),
+	}
 }
 
 func normalizeName(name string) (string, error) {
@@ -209,4 +217,54 @@ func (s *UserService) PatchUser(ctx context.Context, id int64, name, email, pass
 	}
 
 	return user, nil
+}
+
+type authClaims struct {
+	UserID int64 `json:"user_id"`
+	jwt.RegisteredClaims
+}
+
+func (s *UserService) AuthenticateUser(ctx context.Context, email, password string) (string, error) {
+	email, err := normalizeEmail(email)
+	if err != nil {
+		return "", err
+	}
+
+	password, err = normalizePassword(password)
+	if err != nil {
+		return "", err
+	}
+
+	user, err := s.repo.GetByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return "", ErrInvalidCredentials
+		}
+		return "", err
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+		return "", ErrInvalidCredentials
+	}
+
+	now := time.Now().UTC()
+	expiresAt := now.Add(20 * time.Minute)
+
+	claims := authClaims{
+		UserID: user.ID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   email,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	signedToken, err := token.SignedString(s.jwtSecret)
+	if err != nil {
+		return "", err
+	}
+
+	return signedToken, nil
 }
