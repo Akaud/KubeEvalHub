@@ -1,0 +1,3 @@
+kubectl delete namespace load-lab
+minikube stop
+minikube delete

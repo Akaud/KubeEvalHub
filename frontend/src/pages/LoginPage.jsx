@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 
 export default function LoginPage({ goToRegister }) {
   const [form, setForm] = useState({
-    email: '',
+    identifier: '',
     password: '',
   })
 
@@ -13,12 +13,24 @@ export default function LoginPage({ goToRegister }) {
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    setForm((prev) => ({ ...prev, [name]: value }))
+
+    let nextValue = value
+    if (name === 'identifier') {
+      nextValue = nextValue.trimStart()
+    }
+
+    setForm((prev) => ({ ...prev, [name]: nextValue }))
   }
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    console.log(form)
+
+    const identifier = form.identifier.trim()
+    const password = form.password.trim()
+
+    if (!identifier || !password) return
+
+    console.log({ identifier, password })
   }
 
   return (
@@ -27,10 +39,10 @@ export default function LoginPage({ goToRegister }) {
         <h1>Login</h1>
 
         <input
-          type="email"
-          name="email"
-          placeholder="Email"
-          value={form.email}
+          type="text"
+          name="identifier"
+          placeholder="Email or Username"
+          value={form.identifier}
           onChange={handleChange}
           required
         />

@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 
 export default function RegisterPage({ goToLogin }) {
   const [form, setForm] = useState({
+    username: '',
     email: '',
     password: '',
     confirmPassword: '',
@@ -22,6 +23,10 @@ export default function RegisterPage({ goToLogin }) {
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
     let nextValue = type === 'checkbox' ? checked : value
+
+    if (name === 'username') {
+      nextValue = nextValue.replace(/\s/g, '')
+    }
 
     if (name === 'email') {
       nextValue = nextValue.replace(/\s/g, '')
@@ -45,22 +50,36 @@ export default function RegisterPage({ goToLogin }) {
   const handleSubmit = (e) => {
     e.preventDefault()
 
+    const username = form.username.trim()
     const email = form.email.trim()
     const password = form.password.trim()
     const confirmPassword = form.confirmPassword.trim()
 
-    if (!email || !password || !confirmPassword) return
+    if (!username || !email || !password || !confirmPassword) return
     if (!emailRegex.test(email)) return
     if (password !== confirmPassword) return
     if (!form.consent) return
 
-    console.log({ email, password })
+    console.log({ username, email, password })
   }
 
   return (
     <div className="auth-container">
       <form className="auth-form" onSubmit={handleSubmit}>
         <h1>Register</h1>
+
+        <div className="input-group">
+          <input
+            type="text"
+            name="username"
+            placeholder="Username"
+            value={form.username}
+            onChange={handleChange}
+            required
+            minLength={3}
+            maxLength={30}
+          />
+        </div>
 
         <div className="input-group">
           <input
