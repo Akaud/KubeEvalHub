@@ -198,3 +198,30 @@ func (r *UserRepository) GetByName(ctx context.Context, name string) (*model.Use
 
 	return &user, nil
 }
+
+func (r *UserRepository) GetByID(ctx context.Context, id int64) (*model.User, error) {
+	const query = `
+		SELECT id, name, email, password, created_at, updated_at
+		FROM users
+		WHERE id = $1
+	`
+
+	var user model.User
+
+	err := r.pool.QueryRow(ctx, query, id).Scan(
+		&user.ID,
+		&user.Name,
+		&user.Email,
+		&user.Password,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("get user by id: %w", err)
+	}
+
+	return &user, nil
+}

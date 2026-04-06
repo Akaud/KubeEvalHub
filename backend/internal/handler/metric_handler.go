@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"backend/internal/model"
+	"backend/internal/repository"
 	"backend/internal/service"
 
 	"github.com/go-chi/chi/v5"
@@ -99,6 +100,46 @@ func (h *MetricHandler) GetClusterMetrics(w http.ResponseWriter, r *http.Request
 			return
 		default:
 			writeError(w, http.StatusInternalServerError, "failed to fetch metrics")
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *MetricHandler) ForecastMetric(w http.ResponseWriter, r *http.Request) {
+	ownerID, ok := getAuthenticatedUserID(r)
+	if !ok || ownerID <= 0 {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	agentID := chi.URLParam(r, "id")
+	if agentID == "" {
+		writeError(w, http.StatusBadRequest, "invalid agent id")
+		return
+	}
+
+	var req model.ForecastRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+
+	resp, err := h.metricService.ForecastClusterMetric(r.Context(), ownerID, agentID, &req)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrInvalidMetricsPayload):
+			writeError(w, http.StatusBadRequest, "invalid forecast request")
+			return
+		case errors.Is(err, service.ErrInsufficientForecastData):
+			writeError(w, http.StatusBadRequest, "insufficient forecast data")
+			return
+		case errors.Is(err, repository.ErrMetricSeriesNotFound):
+			writeError(w, http.StatusNotFound, "metric series not found")
+			return
+		default:
+			writeError(w, http.StatusInternalServerError, "forecast failed")
 			return
 		}
 	}

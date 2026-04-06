@@ -50,10 +50,10 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 		// registration must stay public
 		r.Post("/", userHandler.CreateUser)
 
-		// authenticated user-only routes
 		r.Group(func(r chi.Router) {
 			r.Use(jwtAuthMiddleware)
 
+			r.Get("/me", userHandler.GetCurrentUser)
 			r.Put("/{id}", userHandler.UpdateUser)
 			r.Patch("/{id}", userHandler.PatchUser)
 			r.Delete("/{id}", userHandler.DeleteUser)
@@ -82,6 +82,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 		r.Use(jwtAuthMiddleware)
 		r.Get("/", clusterHandler.ListClusters)
 		r.Get("/{id}/metrics", metricHandler.GetClusterMetrics)
+		r.Post("/{id}/forecast", metricHandler.ForecastMetric)
 	})
 
 	return &http.Server{

@@ -29,6 +29,7 @@ type UserRepository interface {
 	Create(ctx context.Context, name, email, password string) (*model.User, error)
 	GetByEmail(ctx context.Context, email string) (*model.User, error)
 	GetByName(ctx context.Context, name string) (*model.User, error)
+	GetByID(ctx context.Context, id int64) (*model.User, error)
 	Update(ctx context.Context, id int64, name, email, password string) (*model.User, error)
 	Delete(ctx context.Context, id int64) error
 	Patch(ctx context.Context, id int64, name, email, password *string) (*model.User, error)
@@ -112,6 +113,24 @@ func (s *UserService) CreateUser(ctx context.Context, name, email, password stri
 		switch {
 		case errors.Is(err, repository.ErrEmailAlreadyExists):
 			return nil, ErrEmailAlreadyExists
+		default:
+			return nil, err
+		}
+	}
+
+	return user, nil
+}
+
+func (s *UserService) GetUserByID(ctx context.Context, id int64) (*model.User, error) {
+	if id <= 0 {
+		return nil, ErrInvalidUserID
+	}
+
+	user, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		switch {
+		case errors.Is(err, repository.ErrUserNotFound):
+			return nil, ErrUserNotFound
 		default:
 			return nil, err
 		}

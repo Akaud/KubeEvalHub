@@ -24,6 +24,28 @@ type MetricRepository interface {
 		from time.Time,
 		to time.Time,
 	) ([]model.MetricSampleRow, error)
+	FindSeriesByIdentity(
+		ctx context.Context,
+		ownerID int64,
+		agentID string,
+		metricName string,
+		resourceKind string,
+		nodeName *string,
+		namespace *string,
+		podName *string,
+		containerName *string,
+	) (*model.MetricSeries, error)
+	GetSeriesByIDForOwner(
+		ctx context.Context,
+		ownerID int64,
+		agentID string,
+		seriesID string,
+	) (*model.MetricSeries, error)
+	GetSeriesSamples(
+		ctx context.Context,
+		seriesID string,
+		limit int,
+	) ([]model.MetricSeriesPoint, error)
 }
 
 type metricRepository struct {
@@ -242,4 +264,181 @@ func (r *metricRepository) GetClusterMetricSamples(
 	}
 
 	return out, nil
+}
+
+func (r *metricRepository) FindSeriesByIdentity(
+	ctx context.Context,
+	ownerID int64,
+	agentID string,
+	metricName string,
+	resourceKind string,
+	nodeName *string,
+	namespace *string,
+	podName *string,
+	containerName *string,
+) (*model.MetricSeries, error) {
+	query := `
+		SELECT
+			msr.id,
+			msr.agent_id,
+			msr.metric_name,
+			msr.metric_type,
+			msr.unit,
+			msr.resource_kind,
+			msr.node_name,
+			msr.namespace,
+			msr.pod_name,
+			msr.container_name,
+			msr.labels_hash,
+			msr.created_at,
+			msr.updated_at
+		FROM metric_series msr
+		JOIN agents a
+			ON a.id = msr.agent_id
+		WHERE msr.agent_id = $1
+		  AND a.owner_id = $2
+		  AND msr.metric_name = $3
+		  AND msr.resource_kind = $4
+		  AND msr.node_name IS NOT DISTINCT FROM $5
+		  AND msr.namespace IS NOT DISTINCT FROM $6
+		  AND msr.pod_name IS NOT DISTINCT FROM $7
+		  AND msr.container_name IS NOT DISTINCT FROM $8
+		ORDER BY msr.updated_at DESC
+		LIMIT 1
+	`
+
+	var series model.MetricSeries
+	err := r.pool.QueryRow(
+		ctx,
+		query,
+		agentID,
+		ownerID,
+		metricName,
+		resourceKind,
+		nodeName,
+		namespace,
+		podName,
+		containerName,
+	).Scan(
+		&series.ID,
+		&series.AgentID,
+		&series.MetricName,
+		&series.MetricType,
+		&series.Unit,
+		&series.ResourceKind,
+		&series.NodeName,
+		&series.Namespace,
+		&series.PodName,
+		&series.ContainerName,
+		&series.LabelsHash,
+		&series.CreatedAt,
+		&series.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrMetricSeriesNotFound
+		}
+		return nil, err
+	}
+
+	return &series, nil
+}
+
+func (r *metricRepository) GetSeriesByIDForOwner(
+	ctx context.Context,
+	ownerID int64,
+	agentID string,
+	seriesID string,
+) (*model.MetricSeries, error) {
+	query := `
+		SELECT
+			msr.id,
+			msr.agent_id,
+			msr.metric_name,
+			msr.metric_type,
+			msr.unit,
+			msr.resource_kind,
+			msr.node_name,
+			msr.namespace,
+			msr.pod_name,
+			msr.container_name,
+			msr.labels_hash,
+			msr.created_at,
+			msr.updated_at
+		FROM metric_series msr
+		JOIN agents a
+			ON a.id = msr.agent_id
+		WHERE msr.id = $1
+		  AND msr.agent_id = $2
+		  AND a.owner_id = $3
+		LIMIT 1
+	`
+
+	var series model.MetricSeries
+	err := r.pool.QueryRow(ctx, query, seriesID, agentID, ownerID).Scan(
+		&series.ID,
+		&series.AgentID,
+		&series.MetricName,
+		&series.MetricType,
+		&series.Unit,
+		&series.ResourceKind,
+		&series.NodeName,
+		&series.Namespace,
+		&series.PodName,
+		&series.ContainerName,
+		&series.LabelsHash,
+		&series.CreatedAt,
+		&series.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrMetricSeriesNotFound
+		}
+		return nil, err
+	}
+
+	return &series, nil
+}
+
+func (r *metricRepository) GetSeriesSamples(
+	ctx context.Context,
+	seriesID string,
+	limit int,
+) ([]model.MetricSeriesPoint, error) {
+	if limit <= 0 {
+		limit = 120
+	}
+
+	query := `
+		SELECT collected_at, value_double
+		FROM metric_samples
+		WHERE series_id = $1
+		ORDER BY collected_at DESC
+		LIMIT $2
+	`
+
+	rows, err := r.pool.Query(ctx, query, seriesID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	points := make([]model.MetricSeriesPoint, 0, limit)
+	for rows.Next() {
+		var point model.MetricSeriesPoint
+		if err := rows.Scan(&point.CollectedAt, &point.Value); err != nil {
+			return nil, err
+		}
+		points = append(points, point)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	for i, j := 0, len(points)-1; i < j; i, j = i+1, j-1 {
+		points[i], points[j] = points[j], points[i]
+	}
+
+	return points, nil
 }

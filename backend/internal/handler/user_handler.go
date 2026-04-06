@@ -194,3 +194,19 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusInternalServerError, "internal server error")
 	}
 }
+
+func (h *Handler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
+	userID, ok := getAuthenticatedUserID(r)
+	if !ok || userID <= 0 {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	user, err := h.userService.GetUserByID(r.Context(), userID)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, user)
+}
