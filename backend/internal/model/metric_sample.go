@@ -9,3 +9,19 @@ type MetricSample struct {
 	ReceivedAt  time.Time `json:"receivedAt"`
 	Value       float64   `json:"value"`
 }
+
+type MetricSampleRow struct {
+	SeriesID      string
+	AgentID       string
+	MetricName    string
+	MetricType    string
+	Unit          string
+	ResourceKind  string
+	NodeName      *string
+	Namespace     *string
+	PodName       *string
+	ContainerName *string
+	LabelsHash    string
+	CollectedAt   time.Time
+	Value         float64
+}

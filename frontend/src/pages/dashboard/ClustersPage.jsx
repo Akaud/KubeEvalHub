@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
 export default function ClustersPage() {
@@ -7,6 +8,7 @@ export default function ClustersPage() {
   const [error, setError] = useState('')
 
   const { token } = useAuth()
+  const navigate = useNavigate()
 
   const authToken = useMemo(() => {
     return token || localStorage.getItem('token') || ''
@@ -46,6 +48,10 @@ export default function ClustersPage() {
     return () => clearInterval(id)
   }, [authToken])
 
+  const handleShowMetrics = (agentId) => {
+    navigate(`/dashboard/clusters/${agentId}/metrics`)
+  }
+
   return (
     <>
       <div className="dashboard-header">
@@ -84,6 +90,14 @@ export default function ClustersPage() {
                     <span className={`agent-status-badge status-${c.status}`}>
                       {c.status}
                     </span>
+
+                    <button
+                      type="button"
+                      className="dashboard-nav-button is-primary"
+                      onClick={() => handleShowMetrics(c.agentId)}
+                    >
+                      Show metrics
+                    </button>
                   </div>
                 </div>
               ))}

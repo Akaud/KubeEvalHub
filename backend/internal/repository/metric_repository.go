@@ -17,6 +17,13 @@ type MetricRepository interface {
 	UpsertSeries(ctx context.Context, series *model.MetricSeries) (string, error)
 	InsertSample(ctx context.Context, sample *model.MetricSample) error
 	InsertSamples(ctx context.Context, samples []model.MetricSample) error
+	GetClusterMetricSamples(
+		ctx context.Context,
+		ownerID int64,
+		agentID string,
+		from time.Time,
+		to time.Time,
+	) ([]model.MetricSampleRow, error)
 }
 
 type metricRepository struct {
@@ -156,4 +163,83 @@ func (r *metricRepository) InsertSamples(ctx context.Context, samples []model.Me
 
 func nowUTCMetric() time.Time {
 	return time.Now().UTC()
+}
+
+func (r *metricRepository) GetClusterMetricSamples(
+	ctx context.Context,
+	ownerID int64,
+	agentID string,
+	from time.Time,
+	to time.Time,
+) ([]model.MetricSampleRow, error) {
+	query := `
+		SELECT
+			msr.id,
+			msr.agent_id,
+			msr.metric_name,
+			msr.metric_type,
+			msr.unit,
+			msr.resource_kind,
+			msr.node_name,
+			msr.namespace,
+			msr.pod_name,
+			msr.container_name,
+			msr.labels_hash,
+			mss.collected_at,
+			mss.value_double
+		FROM agent_clusters ac
+		JOIN agents a
+			ON a.id = ac.agent_id
+		JOIN metric_series msr
+			ON msr.agent_id = a.id
+		JOIN metric_samples mss
+			ON mss.series_id = msr.id
+		WHERE ac.agent_id = $1
+		  AND a.owner_id = $2
+		  AND mss.collected_at >= $3
+		  AND mss.collected_at <= $4
+		ORDER BY
+			msr.metric_name,
+			msr.resource_kind,
+			msr.node_name NULLS FIRST,
+			msr.namespace NULLS FIRST,
+			msr.pod_name NULLS FIRST,
+			msr.container_name NULLS FIRST,
+			mss.collected_at ASC
+	`
+
+	rows, err := r.pool.Query(ctx, query, agentID, ownerID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]model.MetricSampleRow, 0)
+	for rows.Next() {
+		var row model.MetricSampleRow
+		if err := rows.Scan(
+			&row.SeriesID,
+			&row.AgentID,
+			&row.MetricName,
+			&row.MetricType,
+			&row.Unit,
+			&row.ResourceKind,
+			&row.NodeName,
+			&row.Namespace,
+			&row.PodName,
+			&row.ContainerName,
+			&row.LabelsHash,
+			&row.CollectedAt,
+			&row.Value,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return out, nil
 }

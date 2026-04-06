@@ -75,6 +75,57 @@
   border: 1px solid #dc2626;
 }
 
+.dashboard-nav-button {
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 16px;
+  padding: 14px 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 16px;
+  color: #1f2937;
+  cursor: pointer;
+  transition: 0.2s ease;
+  box-sizing: border-box;
+  text-decoration: none;
+  min-width: 160px;
+  max-width: 100%;
+  justify-content: flex-start;
+  font: inherit;
+}
+
+.dashboard-nav-button:hover {
+  background: #f9fafb;
+  border-color: #e5e7eb;
+}
+
+.dashboard-layout-dark .dashboard-nav-button {
+  color: #d1d5db;
+}
+
+.dashboard-layout-dark .dashboard-nav-button:hover {
+  background: #374151;
+  border-color: #4b5563;
+}
+
+.dashboard-nav-button.active,
+.dashboard-nav-button.is-primary {
+  background: #166534;
+  color: #ffffff;
+}
+
+.dashboard-nav-button.active:hover,
+.dashboard-nav-button.is-primary:hover {
+  background: #15803d;
+  border-color: #15803d;
+}
+
+.dashboard-nav-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .sidebar-item:hover,
 .sidebar-logout:hover {
   background: #f9fafb;
@@ -593,6 +644,125 @@ body.theme-dark {
   width: 100%;
 }
 
+.metrics-filters {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.metrics-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.metrics-filter-group input {
+  min-height: 40px;
+  padding: 8px 10px;
+}
+
+.cluster-metrics-summary {
+  margin-bottom: 20px;
+}
+
+.metrics-series-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.metrics-chart-card {
+  padding: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+}
+
+.metrics-chart-card h3 {
+  margin: 0 0 8px;
+}
+
+.metrics-chart-card p {
+  margin: 0 0 16px;
+  opacity: 0.8;
+}
+
+.metrics-chart-wrapper {
+  width: 100%;
+  height: 320px;
+}
+
+.metrics-page-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.metrics-controls {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.metrics-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.metrics-control-group label {
+  font-size: 14px;
+  color: inherit;
+}
+
+.metrics-control-group select {
+  min-height: 46px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #111827;
+  font: inherit;
+}
+
+.dashboard-layout-dark .metrics-control-group select {
+  background: #1f2937;
+  color: #f9fafb;
+  border-color: #4b5563;
+}
+
+.create-agent-button.create-agent-icon-button {
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border-radius: 20px;
+  justify-content: center;
+  background: #166534;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.create-agent-button.create-agent-icon-button:hover {
+  background: #15803d;
+}
+
+.create-agent-button.create-agent-icon-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+.status-failed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.dashboard-layout-dark .status-failed {
+  background: rgba(239, 68, 68, 0.16);
+  color: #fca5a5;
+}
+
 /* Tablet and below */
 @media (max-width: 900px) {
   .dashboard-layout {
@@ -649,7 +819,8 @@ body.theme-dark {
     gap: 10px;
   }
 
-  .sidebar-item {
+  .sidebar-item,
+  .dashboard-nav-button {
     width: 100%;
     min-width: 0;
   }
@@ -725,35 +896,14 @@ body.theme-dark {
     flex-direction: column;
     align-items: flex-start;
   }
-  
-}
 
-.create-agent-button.create-agent-icon-button {
-  width: 64px;
-  height: 64px;
-  padding: 0;
-  border-radius: 20px;
-  justify-content: center;
-  background: #166534;
-  color: #ffffff;
-  flex-shrink: 0;
-}
+  .metrics-page-toolbar,
+  .metrics-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
 
-.create-agent-button.create-agent-icon-button:hover {
-  background: #15803d;
-}
-
-.create-agent-button.create-agent-icon-button svg {
-  width: 20px;
-  height: 20px;
-}
-
-.status-failed {
-  background: #fee2e2;
-  color: #b91c1c;
-}
-
-.dashboard-layout-dark .status-failed {
-  background: rgba(239, 68, 68, 0.16);
-  color: #fca5a5;
+  .metrics-control-group select {
+    width: 100%;
+  }
 }

@@ -12,6 +12,9 @@ CREATE TABLE agent_clusters (
     updated_at timestamptz NOT NULL
 );
 
+CREATE INDEX agent_clusters_cluster_uid_idx
+ON agent_clusters (cluster_uid);
+
 CREATE TABLE metric_series (
     id uuid PRIMARY KEY,
     agent_id uuid NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -41,6 +44,12 @@ ON metric_series (
 )
 NULLS NOT DISTINCT;
 
+CREATE INDEX metric_series_agent_id_idx
+ON metric_series (agent_id);
+
+CREATE INDEX metric_series_agent_metric_idx
+ON metric_series (agent_id, metric_name);
+
 CREATE TABLE metric_samples (
     id uuid PRIMARY KEY,
     series_id uuid NOT NULL REFERENCES metric_series(id) ON DELETE CASCADE,
@@ -64,9 +73,12 @@ DROP INDEX IF EXISTS metric_samples_collected_at_idx;
 DROP INDEX IF EXISTS metric_samples_series_time_idx;
 DROP TABLE IF EXISTS metric_samples;
 
+DROP INDEX IF EXISTS metric_series_agent_metric_idx;
+DROP INDEX IF EXISTS metric_series_agent_id_idx;
 DROP INDEX IF EXISTS metric_series_identity_uidx;
 DROP TABLE IF EXISTS metric_series;
 
+DROP INDEX IF EXISTS agent_clusters_cluster_uid_idx;
 DROP TABLE IF EXISTS agent_clusters;
 
 -- +goose StatementEnd

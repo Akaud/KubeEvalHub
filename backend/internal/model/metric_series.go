@@ -6,9 +6,9 @@ type MetricSeries struct {
 	ID            string    `json:"id"`
 	AgentID       string    `json:"agentId"`
 	MetricName    string    `json:"metricName"`
-	MetricType    string    `json:"metricType"`   // e.g. "gauge"
-	Unit          string    `json:"unit"`         // e.g. "cores", "bytes"
-	ResourceKind  string    `json:"resourceKind"` // e.g. "node", "pod"
+	MetricType    string    `json:"metricType"`
+	Unit          string    `json:"unit"`
+	ResourceKind  string    `json:"resourceKind"`
 	NodeName      *string   `json:"nodeName,omitempty"`
 	Namespace     *string   `json:"namespace,omitempty"`
 	PodName       *string   `json:"podName,omitempty"`
@@ -16,4 +16,21 @@ type MetricSeries struct {
 	LabelsHash    string    `json:"labelsHash"`
 	CreatedAt     time.Time `json:"createdAt"`
 	UpdatedAt     time.Time `json:"updatedAt"`
+}
+
+type MetricSeriesPoint struct {
+	CollectedAt time.Time `json:"collectedAt"`
+	Value       float64   `json:"value"`
+}
+
+type MetricSeriesWithSamples struct {
+	Series  MetricSeries        `json:"series"`
+	Samples []MetricSeriesPoint `json:"samples"`
+}
+
+type ClusterMetricsResponse struct {
+	ClusterID string                    `json:"clusterId"`
+	From      time.Time                 `json:"from"`
+	To        time.Time                 `json:"to"`
+	Items     []MetricSeriesWithSamples `json:"items"`
 }

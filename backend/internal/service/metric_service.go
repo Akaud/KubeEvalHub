@@ -24,6 +24,13 @@ var (
 
 type MetricService interface {
 	IngestMetrics(ctx context.Context, agentID string, req *model.PushMetricsRequest) error
+	GetClusterMetrics(
+		ctx context.Context,
+		ownerID int64,
+		clusterID string,
+		from time.Time,
+		to time.Time,
+	) (*model.ClusterMetricsResponse, error)
 }
 
 type metricService struct {
@@ -196,4 +203,68 @@ func hashLabels(labels map[string]string) (string, error) {
 
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func (s *metricService) GetClusterMetrics(
+	ctx context.Context,
+	ownerID int64,
+	clusterID string,
+	from time.Time,
+	to time.Time,
+) (*model.ClusterMetricsResponse, error) {
+	if ownerID <= 0 || strings.TrimSpace(clusterID) == "" {
+		return nil, ErrInvalidMetricsPayload
+	}
+	if from.IsZero() || to.IsZero() || to.Before(from) {
+		return nil, ErrInvalidMetricsPayload
+	}
+
+	rows, err := s.metricRepo.GetClusterMetricSamples(ctx, ownerID, clusterID, from, to)
+	if err != nil {
+		return nil, err
+	}
+
+	grouped := make(map[string]*model.MetricSeriesWithSamples)
+	order := make([]string, 0)
+
+	for _, row := range rows {
+		item, exists := grouped[row.SeriesID]
+		if !exists {
+			item = &model.MetricSeriesWithSamples{
+				Series: model.MetricSeries{
+					ID:            row.SeriesID,
+					AgentID:       row.AgentID,
+					MetricName:    row.MetricName,
+					MetricType:    row.MetricType,
+					Unit:          row.Unit,
+					ResourceKind:  row.ResourceKind,
+					NodeName:      row.NodeName,
+					Namespace:     row.Namespace,
+					PodName:       row.PodName,
+					ContainerName: row.ContainerName,
+					LabelsHash:    row.LabelsHash,
+				},
+				Samples: make([]model.MetricSeriesPoint, 0),
+			}
+			grouped[row.SeriesID] = item
+			order = append(order, row.SeriesID)
+		}
+
+		item.Samples = append(item.Samples, model.MetricSeriesPoint{
+			CollectedAt: row.CollectedAt,
+			Value:       row.Value,
+		})
+	}
+
+	items := make([]model.MetricSeriesWithSamples, 0, len(order))
+	for _, id := range order {
+		items = append(items, *grouped[id])
+	}
+
+	return &model.ClusterMetricsResponse{
+		ClusterID: clusterID,
+		From:      from,
+		To:        to,
+		Items:     items,
+	}, nil
 }

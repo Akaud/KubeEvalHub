@@ -81,6 +81,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 	r.Route("/clusters", func(r chi.Router) {
 		r.Use(jwtAuthMiddleware)
 		r.Get("/", clusterHandler.ListClusters)
+		r.Get("/{id}/metrics", metricHandler.GetClusterMetrics)
 	})
 
 	return &http.Server{
