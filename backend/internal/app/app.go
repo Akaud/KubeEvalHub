@@ -33,6 +33,8 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 	metricRepo := repository.NewMetricRepository(pool)
 	metricService := service.NewMetricService(clusterRepo, metricRepo)
 	metricHandler := handler.NewMetricHandler(metricService)
+	clusterService := service.NewClusterService(clusterRepo)
+	clusterHandler := handler.NewClusterHandler(clusterService)
 
 	jwtAuthMiddleware := handler.JWTAuthMiddleware(userService)
 
@@ -66,6 +68,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 		r.Get("/", agentHandler.ListAgents)
 		r.Get("/{id}", agentHandler.GetAgent)
 		r.Patch("/{id}/enabled", agentHandler.UpdateAgentEnabled)
+		r.Delete("/{id}", agentHandler.DeleteAgent)
 	})
 
 	// agent-authenticated routes
@@ -73,6 +76,11 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 		r.Use(handler.AgentAuthMiddleware(agentService))
 		r.Post("/heartbeat", agentHandler.Heartbeat)
 		r.Post("/metrics", metricHandler.IngestMetrics)
+	})
+
+	r.Route("/clusters", func(r chi.Router) {
+		r.Use(jwtAuthMiddleware)
+		r.Get("/", clusterHandler.ListClusters)
 	})
 
 	return &http.Server{

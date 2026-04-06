@@ -19,6 +19,7 @@ type AgentRepository interface {
 	ListByOwnerID(ctx context.Context, ownerID int64) ([]model.Agent, error)
 	UpdateEnabled(ctx context.Context, id string, ownerID int64, enabled bool, updatedAt time.Time) error
 	UpdateHeartbeat(ctx context.Context, id string, active bool, heartbeatAt, updatedAt time.Time) error
+	Delete(ctx context.Context, id string, ownerID int64) error
 }
 
 type agentRepository struct {
@@ -27,6 +28,24 @@ type agentRepository struct {
 
 func NewAgentRepository(pool *pgxpool.Pool) AgentRepository {
 	return &agentRepository{pool: pool}
+}
+
+func (r *agentRepository) Delete(ctx context.Context, id string, ownerID int64) error {
+	query := `
+		DELETE FROM agents
+		WHERE id = $1 AND owner_id = $2
+	`
+
+	cmd, err := r.pool.Exec(ctx, query, id, ownerID)
+	if err != nil {
+		return err
+	}
+
+	if cmd.RowsAffected() == 0 {
+		return ErrAgentNotFound
+	}
+
+	return nil
 }
 
 func (r *agentRepository) Create(ctx context.Context, agent *model.Agent) error {

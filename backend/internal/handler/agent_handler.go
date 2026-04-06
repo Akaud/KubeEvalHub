@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"backend/internal/repository"
 	"backend/internal/service"
@@ -74,7 +75,8 @@ func (h *AgentHandler) ListAgents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, agents)
+	views := service.ToAgentViews(agents, time.Now().UTC())
+	writeJSON(w, http.StatusOK, views)
 }
 
 func (h *AgentHandler) GetAgent(w http.ResponseWriter, r *http.Request) {
@@ -101,7 +103,8 @@ func (h *AgentHandler) GetAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, agent)
+	view := service.ToAgentView(agent, time.Now().UTC())
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (h *AgentHandler) UpdateAgentEnabled(w http.ResponseWriter, r *http.Request) {
@@ -158,5 +161,34 @@ func (h *AgentHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, heartbeatResponse{
 		Message: "heartbeat accepted",
+	})
+}
+
+func (h *AgentHandler) DeleteAgent(w http.ResponseWriter, r *http.Request) {
+	ownerID, ok := getAuthenticatedUserID(r)
+	if !ok || ownerID <= 0 {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	agentID := chi.URLParam(r, "id")
+	if agentID == "" {
+		writeError(w, http.StatusBadRequest, "agent id is required")
+		return
+	}
+
+	err := h.agentService.DeleteAgent(r.Context(), agentID, ownerID)
+	if err != nil {
+		if errors.Is(err, repository.ErrAgentNotFound) {
+			writeError(w, http.StatusNotFound, "agent not found")
+			return
+		}
+
+		writeError(w, http.StatusInternalServerError, "failed to delete agent")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"message": "agent deleted",
 	})
 }

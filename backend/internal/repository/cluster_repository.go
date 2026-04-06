@@ -12,9 +12,21 @@ import (
 
 var ErrClusterNotFound = errors.New("cluster not found")
 
+type ClusterWithAgentState struct {
+	AgentID         string
+	ClusterUID      string
+	ClusterName     string
+	KubeVersion     string
+	Distribution    string
+	APIServerHost   string
+	Enabled         bool
+	LastHeartbeatAt *time.Time
+}
+
 type ClusterRepository interface {
 	Upsert(ctx context.Context, cluster *model.AgentCluster) error
 	GetByAgentID(ctx context.Context, agentID string) (*model.AgentCluster, error)
+	ListByOwnerID(ctx context.Context, ownerID int64) ([]ClusterWithAgentState, error)
 }
 
 type clusterRepository struct {
@@ -98,7 +110,54 @@ func (r *clusterRepository) GetByAgentID(ctx context.Context, agentID string) (*
 	return &c, nil
 }
 
-// optional helper if you later want strict immutable UID logic
-func nowUTC() time.Time {
-	return time.Now().UTC()
+func (r *clusterRepository) ListByOwnerID(ctx context.Context, ownerID int64) ([]ClusterWithAgentState, error) {
+	query := `
+		SELECT
+			ac.agent_id,
+			ac.cluster_uid,
+			ac.cluster_name,
+			ac.kube_version,
+			ac.distribution,
+			ac.api_server_host,
+			a.enabled,
+			a.last_heartbeat_at
+		FROM agent_clusters ac
+		INNER JOIN agents a ON a.id = ac.agent_id
+		WHERE a.owner_id = $1
+		ORDER BY ac.created_at DESC
+	`
+
+	rows, err := r.pool.Query(ctx, query, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	clusters := make([]ClusterWithAgentState, 0)
+
+	for rows.Next() {
+		var c ClusterWithAgentState
+
+		err := rows.Scan(
+			&c.AgentID,
+			&c.ClusterUID,
+			&c.ClusterName,
+			&c.KubeVersion,
+			&c.Distribution,
+			&c.APIServerHost,
+			&c.Enabled,
+			&c.LastHeartbeatAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		clusters = append(clusters, c)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return clusters, nil
 }

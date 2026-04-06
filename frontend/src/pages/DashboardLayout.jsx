@@ -7,21 +7,27 @@ import {
   FiCpu,
   FiSettings,
   FiLogOut,
-  FiSun,
-  FiMoon,
 } from 'react-icons/fi'
 import '../styles/DashboardPage.css'
 
 export default function DashboardLayout() {
-  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light')
   const { logout } = useAuth()
   const navigate = useNavigate()
+  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light')
 
   useEffect(() => {
-    document.body.classList.remove('theme-light', 'theme-dark')
-    document.body.classList.add(theme === 'dark' ? 'theme-dark' : 'theme-light')
-    localStorage.setItem('theme', theme)
-  }, [theme])
+    const handleThemeChange = () => {
+      setTheme(localStorage.getItem('theme') || 'light')
+    }
+
+    window.addEventListener('theme-change', handleThemeChange)
+    window.addEventListener('storage', handleThemeChange)
+
+    return () => {
+      window.removeEventListener('theme-change', handleThemeChange)
+      window.removeEventListener('storage', handleThemeChange)
+    }
+  }, [])
 
   const handleLogout = () => {
     logout()
@@ -32,8 +38,7 @@ export default function DashboardLayout() {
     <div className={`dashboard-layout ${theme === 'dark' ? 'dashboard-layout-dark' : ''}`}>
       <aside className="dashboard-sidebar">
         <div className="sidebar-brand">
-          <h2>Donezo</h2>
-          <p>Toolbox</p>
+          <h2>KubeEvalHub</h2>
         </div>
 
         <nav className="sidebar-nav">
@@ -69,26 +74,6 @@ export default function DashboardLayout() {
             <span>Settings</span>
           </NavLink>
         </nav>
-
-        <div className="sidebar-theme">
-          <button
-            type="button"
-            className={`theme-button ${theme === 'light' ? 'active' : ''}`}
-            onClick={() => setTheme('light')}
-          >
-            <FiSun />
-            <span>Light</span>
-          </button>
-
-          <button
-            type="button"
-            className={`theme-button ${theme === 'dark' ? 'active' : ''}`}
-            onClick={() => setTheme('dark')}
-          >
-            <FiMoon />
-            <span>Dark</span>
-          </button>
-        </div>
 
         <button className="sidebar-logout" type="button" onClick={handleLogout}>
           <FiLogOut />

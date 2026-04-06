@@ -1,20 +1,4 @@
 apiVersion: v1
-kind: Namespace
-metadata:
-  name: kubeevalhub-agent
-
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: kubeevalhub-agent-secret
-  namespace: kubeevalhub-agent
-type: Opaque
-stringData:
-  AGENT_TOKEN: "3b3bfce1d9ef92198c0081996eb00251fb1385d15b1eef29b0b6d65dca74bf79"
-
----
-apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: kubeevalhub-agent
@@ -77,7 +61,7 @@ spec:
                   name: kubeevalhub-agent-secret
                   key: AGENT_TOKEN
             - name: SCRAPE_INTERVAL
-              value: "30s"
+              value: "5s"
             - name: REQUEST_TIMEOUT
               value: "10s"
           resources:

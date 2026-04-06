@@ -25,6 +25,7 @@ type AgentService interface {
 	SetEnabled(ctx context.Context, id string, ownerID int64, enabled bool) error
 	AuthenticateByToken(ctx context.Context, token string) (*model.Agent, error)
 	Heartbeat(ctx context.Context, agentID string) error
+	DeleteAgent(ctx context.Context, id string, ownerID int64) error
 }
 
 type CreateAgentResult struct {
@@ -40,6 +41,10 @@ func NewAgentService(agentRepo repository.AgentRepository) AgentService {
 	return &agentService{
 		agentRepo: agentRepo,
 	}
+}
+
+func (s *agentService) DeleteAgent(ctx context.Context, id string, ownerID int64) error {
+	return s.agentRepo.Delete(ctx, id, ownerID)
 }
 
 func (s *agentService) CreateAgent(ctx context.Context, ownerID int64, name string) (*CreateAgentResult, error) {
@@ -115,4 +120,43 @@ func generateSecureToken(numBytes int) (string, error) {
 func hashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
+}
+
+func ComputeAgentStatus(agent *model.Agent, now time.Time) model.AgentStatus {
+	if !agent.Enabled {
+		return model.AgentStatusDisabled
+	}
+
+	if agent.LastHeartbeatAt == nil {
+		return model.AgentStatusNeverConnected
+	}
+
+	if now.Sub(*agent.LastHeartbeatAt) <= 90*time.Second {
+		return model.AgentStatusOnline
+	}
+
+	return model.AgentStatusOffline
+}
+
+func ToAgentView(agent *model.Agent, now time.Time) model.AgentView {
+	return model.AgentView{
+		ID:              agent.ID,
+		OwnerID:         agent.OwnerID,
+		Name:            agent.Name,
+		Enabled:         agent.Enabled,
+		Active:          agent.Active,
+		Status:          ComputeAgentStatus(agent, now),
+		LastHeartbeatAt: agent.LastHeartbeatAt,
+		CreatedAt:       agent.CreatedAt,
+		UpdatedAt:       agent.UpdatedAt,
+	}
+}
+
+func ToAgentViews(agents []model.Agent, now time.Time) []model.AgentView {
+	result := make([]model.AgentView, 0, len(agents))
+	for i := range agents {
+		agent := agents[i]
+		result = append(result, ToAgentView(&agent, now))
+	}
+	return result
 }
