@@ -1,24 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useAuth } from '../context/AuthContext'
-import { useNavigate } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import { useAuth } from '../../context/AuthContext'
 import {
-  FiUser,
-  FiServer,
-  FiSettings,
-  FiLogOut,
-  FiSun,
-  FiMoon,
   FiPlus,
   FiCopy,
   FiCheck,
   FiX,
 } from 'react-icons/fi'
-import '../styles/DashboardPage.css'
 
-export default function DashboardPage() {
-  const [activeSection, setActiveSection] = useState('profile')
-  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light')
-
+export default function AgentsPage() {
   const [showCreateAgentModal, setShowCreateAgentModal] = useState(false)
   const [agentName, setAgentName] = useState('')
   const [isCreatingAgent, setIsCreatingAgent] = useState(false)
@@ -26,23 +15,11 @@ export default function DashboardPage() {
   const [createdAgentResult, setCreatedAgentResult] = useState(null)
   const [copied, setCopied] = useState(false)
 
-  const { logout, token } = useAuth()
-  const navigate = useNavigate()
-
-  useEffect(() => {
-    document.body.classList.remove('theme-light', 'theme-dark')
-    document.body.classList.add(theme === 'dark' ? 'theme-dark' : 'theme-light')
-    localStorage.setItem('theme', theme)
-  }, [theme])
+  const { token } = useAuth()
 
   const authToken = useMemo(() => {
     return token || localStorage.getItem('token') || ''
   }, [token])
-
-  const handleLogout = () => {
-    logout()
-    navigate('/login', { replace: true })
-  }
 
   const openCreateAgentModal = () => {
     setAgentName('')
@@ -88,9 +65,7 @@ export default function DashboardPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${authToken}`,
         },
-        body: JSON.stringify({
-          name: trimmedName,
-        }),
+        body: JSON.stringify({ name: trimmedName }),
       })
 
       const data = await response.json().catch(() => null)
@@ -122,131 +97,29 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className={`dashboard-layout ${theme === 'dark' ? 'dashboard-layout-dark' : ''}`}>
-      <aside className="dashboard-sidebar">
-        <div className="sidebar-brand">
-          <h2>Donezo</h2>
-          <p>Toolbox</p>
+    <>
+      <div className="dashboard-header">
+        <div>
+          <h1>Agents</h1>
+          <p>Create and manage agents connected to your self-hosted cluster.</p>
         </div>
+      </div>
 
-        <nav className="sidebar-nav">
-          <button
-            className={`sidebar-item ${activeSection === 'profile' ? 'active' : ''}`}
-            type="button"
-            onClick={() => setActiveSection('profile')}
-          >
-            <FiUser />
-            <span>Profile</span>
-          </button>
-
-          <button
-            className={`sidebar-item ${activeSection === 'cluster' ? 'active' : ''}`}
-            type="button"
-            onClick={() => setActiveSection('cluster')}
-          >
-            <FiServer />
-            <span>Cluster</span>
-          </button>
-
-          <button
-            className={`sidebar-item ${activeSection === 'settings' ? 'active' : ''}`}
-            type="button"
-            onClick={() => setActiveSection('settings')}
-          >
-            <FiSettings />
-            <span>Settings</span>
-          </button>
-        </nav>
-
-        <button className="sidebar-logout" type="button" onClick={handleLogout}>
-          <FiLogOut />
-          <span>Logout</span>
-        </button>
-      </aside>
-
-      <main className="dashboard-content">
-        {activeSection === 'profile' && (
-          <>
-            <div className="dashboard-header">
-              <div>
-                <h1>Profile</h1>
-                <p>View and manage your account information.</p>
-              </div>
+      <section className="dashboard-cards dashboard-cards-single">
+        <div className="dashboard-card dashboard-card-primary agents-panel">
+          <div className="agents-panel-header">
+            <div>
+              <h3>Agents</h3>
+              <p>Create a new agent and get its connection token.</p>
             </div>
 
-            <section className="dashboard-cards">
-              <div className="dashboard-card dashboard-card-primary">
-                <h3>Profile</h3>
-                <p>View and manage your account information.</p>
-              </div>
-              <div className="dashboard-card">
-                <h3>Account</h3>
-                <p>Inspect personal details and authentication data.</p>
-              </div>
-              <div className="dashboard-card">
-                <h3>Security</h3>
-                <p>Review password and access-related settings.</p>
-              </div>
-            </section>
-          </>
-        )}
-
-        {activeSection === 'cluster' && (
-          <>
-            <div className="dashboard-header">
-              <div>
-                <h1>Cluster</h1>
-                <p>Create and manage agents connected to your self-hosted cluster.</p>
-              </div>
-            </div>
-
-            <section className="dashboard-cards dashboard-cards-single">
-              <div className="dashboard-card dashboard-card-primary agents-panel">
-                <div className="agents-panel-header">
-                  <div>
-                    <h3>Agents</h3>
-                    <p>Create a new agent and get its connection token.</p>
-                  </div>
-
-                  <button className="create-agent-button" type="button" onClick={openCreateAgentModal}>
-                    <FiPlus />
-                    <span>Create agent</span>
-                  </button>
-                </div>
-              </div>
-            </section>
-          </>
-        )}
-
-        {activeSection === 'settings' && (
-          <section className="settings-panel">
-            <div className="settings-card">
-              <h3>Appearance</h3>
-              <p>Choose how the dashboard should look.</p>
-
-              <div className="theme-toggle">
-                <button
-                  type="button"
-                  className={`theme-button ${theme === 'light' ? 'active' : ''}`}
-                  onClick={() => setTheme('light')}
-                >
-                  <FiSun />
-                  <span>Light mode</span>
-                </button>
-
-                <button
-                  type="button"
-                  className={`theme-button ${theme === 'dark' ? 'active' : ''}`}
-                  onClick={() => setTheme('dark')}
-                >
-                  <FiMoon />
-                  <span>Dark mode</span>
-                </button>
-              </div>
-            </div>
-          </section>
-        )}
-      </main>
+            <button className="create-agent-button" type="button" onClick={openCreateAgentModal}>
+              <FiPlus />
+              <span>Create agent</span>
+            </button>
+          </div>
+        </div>
+      </section>
 
       {showCreateAgentModal && (
         <div className="modal-backdrop" onClick={closeCreateAgentModal}>
@@ -336,6 +209,6 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }

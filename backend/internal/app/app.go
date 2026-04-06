@@ -29,6 +29,11 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 	agentService := service.NewAgentService(agentRepo)
 	agentHandler := handler.NewAgentHandler(agentService)
 
+	clusterRepo := repository.NewClusterRepository(pool)
+	metricRepo := repository.NewMetricRepository(pool)
+	metricService := service.NewMetricService(clusterRepo, metricRepo)
+	metricHandler := handler.NewMetricHandler(metricService)
+
 	jwtAuthMiddleware := handler.JWTAuthMiddleware(userService)
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -65,10 +70,9 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 
 	// agent-authenticated routes
 	r.Route("/agent", func(r chi.Router) {
-		// replace with your agent token auth middleware
-		// r.Use(handler.AgentAuthMiddleware(agentService))
-
+		r.Use(handler.AgentAuthMiddleware(agentService))
 		r.Post("/heartbeat", agentHandler.Heartbeat)
+		r.Post("/metrics", metricHandler.IngestMetrics)
 	})
 
 	return &http.Server{

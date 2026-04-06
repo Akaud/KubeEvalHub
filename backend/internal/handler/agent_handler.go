@@ -160,8 +160,3 @@ func (h *AgentHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 		Message: "heartbeat accepted",
 	})
 }
-
-func getAgentIDFromContext(r *http.Request) (string, bool) {
-	agentID, ok := r.Context().Value("agentID").(string)
-	return agentID, ok
-}

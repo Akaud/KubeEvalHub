@@ -15,7 +15,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/dashboard', { replace: true })
+      navigate('/dashboard/profile', { replace: true })
     }
   }, [isAuthenticated, navigate])
 
@@ -55,7 +55,7 @@ export default function LoginPage() {
       }
 
       login(data.token)
-      navigate('/dashboard', { replace: true })
+      navigate('/dashboard/profile', { replace: true })
     } catch {
       setError('Network error')
     }
