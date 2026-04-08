@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"os/signal"
@@ -14,13 +15,9 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
-
-	if cfg.AgentToken == "" {
-		log.Fatal("AGENT_TOKEN is required")
-	}
-	if cfg.BackendURL == "" {
-		log.Fatal("BACKEND_URL is required")
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("failed to load config: %v", err)
 	}
 
 	kubeClients, err := kube.NewInClusterClients()
@@ -40,7 +37,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	if err := r.Run(ctx); err != nil && err != context.Canceled {
+	if err := r.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatalf("agent stopped with error: %v", err)
 	}
 }

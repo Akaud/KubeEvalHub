@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"time"
@@ -14,39 +15,53 @@ type Config struct {
 	InsecureSkipTLS bool
 }
 
-func Load() Config {
-	return Config{
-		BackendURL:      getEnv("BACKEND_URL", "http://backend:8080"),
-		AgentToken:      getEnv("AGENT_TOKEN", ""),
-		ScrapeInterval:  getEnvDuration("SCRAPE_INTERVAL", 30*time.Second),
-		RequestTimeout:  getEnvDuration("REQUEST_TIMEOUT", 10*time.Second),
-		InsecureSkipTLS: getEnvBool("INSECURE_SKIP_TLS", false),
+func Load() (Config, error) {
+	var cfg Config
+	var err error
+
+	if cfg.BackendURL, err = requireEnv("BACKEND_URL"); err != nil {
+		return Config{}, err
 	}
+
+	if cfg.AgentToken, err = requireEnv("AGENT_TOKEN"); err != nil {
+		return Config{}, err
+	}
+
+	if cfg.ScrapeInterval, err = requireEnvDuration("SCRAPE_INTERVAL"); err != nil {
+		return Config{}, err
+	}
+
+	if cfg.RequestTimeout, err = requireEnvDuration("REQUEST_TIMEOUT"); err != nil {
+		return Config{}, err
+	}
+
+	if cfg.InsecureSkipTLS, err = requireEnvBool("INSECURE_SKIP_TLS"); err != nil {
+		return Config{}, err
+	}
+
+	return cfg, nil
 }
 
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+func requireEnv(key string) (string, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return "", fmt.Errorf("missing required env: %s", key)
 	}
-	return fallback
+	return v, nil
 }
 
-func getEnvDuration(key string, fallback time.Duration) time.Duration {
-	if v := os.Getenv(key); v != "" {
-		d, err := time.ParseDuration(v)
-		if err == nil {
-			return d
-		}
+func requireEnvDuration(key string) (time.Duration, error) {
+	v, err := requireEnv(key)
+	if err != nil {
+		return 0, err
 	}
-	return fallback
+	return time.ParseDuration(v)
 }
 
-func getEnvBool(key string, fallback bool) bool {
-	if v := os.Getenv(key); v != "" {
-		b, err := strconv.ParseBool(v)
-		if err == nil {
-			return b
-		}
+func requireEnvBool(key string) (bool, error) {
+	v, err := requireEnv(key)
+	if err != nil {
+		return false, err
 	}
-	return fallback
+	return strconv.ParseBool(v)
 }
