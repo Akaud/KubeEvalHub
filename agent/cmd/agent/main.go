@@ -29,7 +29,6 @@ func main() {
 		cfg.BackendURL,
 		cfg.AgentToken,
 		cfg.RequestTimeout,
-		cfg.InsecureSkipTLS,
 	)
 
 	r := runner.New(cfg, kubeClients, backendClient)

@@ -157,8 +157,6 @@ spec:
                   key: AGENT_TOKEN
             - name: SCRAPE_INTERVAL
               value: "${interval}"
-            - name: REQUEST_TIMEOUT
-              value: "10s"
           resources:
             requests:
               cpu: "50m"

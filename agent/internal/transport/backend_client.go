@@ -19,11 +19,10 @@ type Client struct {
 	httpClient *http.Client
 }
 
-func New(baseURL, token string, timeout time.Duration, insecureSkipTLS bool) *Client {
+func New(baseURL, token string, timeout time.Duration) *Client {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: insecureSkipTLS,
+			MinVersion: tls.VersionTLS12,
 		},
 	}
 

@@ -3,65 +3,82 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
+	"strings"
 	"time"
 )
 
 type Config struct {
-	BackendURL      string
-	AgentToken      string
-	ScrapeInterval  time.Duration
-	RequestTimeout  time.Duration
-	InsecureSkipTLS bool
+	BackendURL     string
+	AgentToken     string
+	ScrapeInterval time.Duration
+	RequestTimeout time.Duration
 }
+
+const (
+	minScrapeInterval = 5 * time.Second
+	timeoutBuffer     = 1 * time.Second
+)
 
 func Load() (Config, error) {
 	var cfg Config
 	var err error
 
-	if cfg.BackendURL, err = requireEnv("BACKEND_URL"); err != nil {
+	if cfg.BackendURL, err = getRequired("BACKEND_URL"); err != nil {
 		return Config{}, err
 	}
 
-	if cfg.AgentToken, err = requireEnv("AGENT_TOKEN"); err != nil {
+	if cfg.AgentToken, err = getRequired("AGENT_TOKEN"); err != nil {
 		return Config{}, err
 	}
 
-	if cfg.ScrapeInterval, err = requireEnvDuration("SCRAPE_INTERVAL"); err != nil {
+	if cfg.ScrapeInterval, err = getRequiredDuration("SCRAPE_INTERVAL"); err != nil {
 		return Config{}, err
 	}
 
-	if cfg.RequestTimeout, err = requireEnvDuration("REQUEST_TIMEOUT"); err != nil {
-		return Config{}, err
-	}
+	cfg.RequestTimeout = cfg.ScrapeInterval - timeoutBuffer
 
-	if cfg.InsecureSkipTLS, err = requireEnvBool("INSECURE_SKIP_TLS"); err != nil {
+	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
 
 	return cfg, nil
 }
 
-func requireEnv(key string) (string, error) {
-	v := os.Getenv(key)
+func (c Config) Validate() error {
+	switch {
+	case c.BackendURL == "":
+		return fmt.Errorf("missing required env: BACKEND_URL")
+	case c.AgentToken == "":
+		return fmt.Errorf("missing required env: AGENT_TOKEN")
+	case c.ScrapeInterval < minScrapeInterval:
+		return fmt.Errorf("SCRAPE_INTERVAL must be >= %s", minScrapeInterval)
+	case c.RequestTimeout <= 0:
+		return fmt.Errorf("REQUEST_TIMEOUT must be > 0")
+	case c.RequestTimeout >= c.ScrapeInterval:
+		return fmt.Errorf("REQUEST_TIMEOUT must be < SCRAPE_INTERVAL")
+	default:
+		return nil
+	}
+}
+
+func getRequired(key string) (string, error) {
+	v := strings.TrimSpace(os.Getenv(key))
 	if v == "" {
 		return "", fmt.Errorf("missing required env: %s", key)
 	}
 	return v, nil
 }
 
-func requireEnvDuration(key string) (time.Duration, error) {
-	v, err := requireEnv(key)
+func getRequiredDuration(key string) (time.Duration, error) {
+	v, err := getRequired(key)
 	if err != nil {
 		return 0, err
 	}
-	return time.ParseDuration(v)
-}
 
-func requireEnvBool(key string) (bool, error) {
-	v, err := requireEnv(key)
+	d, err := time.ParseDuration(v)
 	if err != nil {
-		return false, err
+		return 0, fmt.Errorf("invalid duration for %s: %w", key, err)
 	}
-	return strconv.ParseBool(v)
+
+	return d, nil
 }
