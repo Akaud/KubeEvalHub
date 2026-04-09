@@ -50,6 +50,10 @@ export default function ClustersPage() {
     navigate(`/dashboard/clusters/${agentId}/inventory`)
   }
 
+  const handleShowRecommendations = (agentId) => {
+    navigate(`/dashboard/clusters/${agentId}/recommendations`)
+  }
+
   return (
     <>
       <div className="dashboard-header">
@@ -96,6 +100,14 @@ export default function ClustersPage() {
                         onClick={() => handleShowInventory(c.agentId)}
                       >
                         Show inventory
+                      </button>
+
+                      <button
+                        type="button"
+                        className="dashboard-nav-button"
+                        onClick={() => handleShowRecommendations(c.agentId)}
+                      >
+                        Show recommendations
                       </button>
 
                       <button

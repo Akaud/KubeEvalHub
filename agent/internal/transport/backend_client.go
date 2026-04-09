@@ -32,6 +32,9 @@ func New(baseURL, token string, timeout time.Duration) *Client {
 		TLSClientConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
 		},
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
 	}
 
 	if timeout <= 0 {
@@ -101,8 +104,7 @@ func (c *Client) postJSON(ctx context.Context, path string, payload any, extraHe
 		return err
 	}
 
-	reader := bytes.NewReader(body)
-	var requestBody io.Reader = reader
+	var requestBody io.Reader = bytes.NewReader(body)
 	useGzip := len(body) >= gzipMinBodyBytes
 
 	if useGzip {

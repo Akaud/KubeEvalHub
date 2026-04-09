@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log"
+	"sync/atomic"
 	"time"
 
 	"agent/internal/config"
@@ -23,6 +24,10 @@ type Runner struct {
 
 	lastInventoryHash string
 	lastInventorySent time.Time
+
+	metricsRunning   int32
+	inventoryRunning int32
+	heartbeatRunning int32
 }
 
 func New(cfg config.Config, kubeClients *kube.Clients, backend *transport.Client) *Runner {
@@ -62,6 +67,7 @@ func (r *Runner) Run(ctx context.Context) error {
 	defer inventoryTicker.Stop()
 	defer heartbeatTicker.Stop()
 
+	// initial sync (blocking is fine here)
 	if err := r.runInventory(ctx, true); err != nil {
 		log.Printf("initial inventory sync error: %v", err)
 	}
@@ -78,19 +84,52 @@ func (r *Runner) Run(ctx context.Context) error {
 			return ctx.Err()
 
 		case <-inventoryTicker.C:
-			if err := r.runInventory(ctx, false); err != nil {
-				log.Printf("inventory sync error: %v", err)
+			if !atomic.CompareAndSwapInt32(&r.inventoryRunning, 0, 1) {
+				continue
 			}
+
+			go func() {
+				defer atomic.StoreInt32(&r.inventoryRunning, 0)
+
+				ctxTimeout, cancel := context.WithTimeout(context.Background(), r.cfg.RequestTimeout*2)
+				defer cancel()
+
+				if err := r.runInventory(ctxTimeout, false); err != nil {
+					log.Printf("inventory sync error: %v", err)
+				}
+			}()
 
 		case <-metricsTicker.C:
-			if err := r.runMetrics(ctx); err != nil {
-				log.Printf("metrics push error: %v", err)
+			if !atomic.CompareAndSwapInt32(&r.metricsRunning, 0, 1) {
+				continue
 			}
 
+			go func() {
+				defer atomic.StoreInt32(&r.metricsRunning, 0)
+
+				ctxTimeout, cancel := context.WithTimeout(context.Background(), r.cfg.RequestTimeout)
+				defer cancel()
+
+				if err := r.runMetrics(ctxTimeout); err != nil {
+					log.Printf("metrics push error: %v", err)
+				}
+			}()
+
 		case <-heartbeatTicker.C:
-			if err := r.runHeartbeat(ctx); err != nil {
-				log.Printf("heartbeat error: %v", err)
+			if !atomic.CompareAndSwapInt32(&r.heartbeatRunning, 0, 1) {
+				continue
 			}
+
+			go func() {
+				defer atomic.StoreInt32(&r.heartbeatRunning, 0)
+
+				ctxTimeout, cancel := context.WithTimeout(context.Background(), r.cfg.RequestTimeout)
+				defer cancel()
+
+				if err := r.runHeartbeat(ctxTimeout); err != nil {
+					log.Printf("heartbeat error: %v", err)
+				}
+			}()
 		}
 	}
 }
