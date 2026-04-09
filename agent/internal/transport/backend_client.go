@@ -37,30 +37,11 @@ func New(baseURL, token string, timeout time.Duration) *Client {
 }
 
 func (c *Client) PushMetrics(ctx context.Context, req model.PushMetricsRequest) error {
-	body, err := json.Marshal(req)
-	if err != nil {
-		return err
-	}
+	return c.postJSON(ctx, "/agent/metrics", req)
+}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/agent/metrics", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+c.token)
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("backend returned status %d", resp.StatusCode)
-	}
-
-	return nil
+func (c *Client) PushInventory(ctx context.Context, req model.PushInventoryRequest) error {
+	return c.postJSON(ctx, "/agent/inventory", req)
 }
 
 func (c *Client) Heartbeat(ctx context.Context) error {
@@ -79,6 +60,33 @@ func (c *Client) Heartbeat(ctx context.Context) error {
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("backend returned status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+func (c *Client) postJSON(ctx context.Context, path string, payload any) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("backend returned status %d for %s", resp.StatusCode, path)
 	}
 
 	return nil

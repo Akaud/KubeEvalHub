@@ -55,10 +55,37 @@ func CollectSamples(ctx context.Context, c *Clients) ([]model.MetricPointPayload
 
 		for _, ctr := range pm.Containers {
 			if cpu := ctr.Usage.Cpu(); cpu != nil {
-				totalMilliCPU += cpu.MilliValue()
+				cpuMilli := cpu.MilliValue()
+				totalMilliCPU += cpuMilli
+
+				out = append(out, model.MetricPointPayload{
+					MetricName:    "kube_container_cpu_usage_cores",
+					MetricType:    "gauge",
+					Unit:          "cores",
+					ResourceKind:  "container",
+					Namespace:     pm.Namespace,
+					PodName:       pm.Name,
+					ContainerName: ctr.Name,
+					CollectedAt:   now,
+					Value:         float64(cpuMilli) / 1000.0,
+				})
 			}
+
 			if mem := ctr.Usage.Memory(); mem != nil {
-				totalMemBytes += mem.Value()
+				memBytes := mem.Value()
+				totalMemBytes += memBytes
+
+				out = append(out, model.MetricPointPayload{
+					MetricName:    "kube_container_memory_usage_bytes",
+					MetricType:    "gauge",
+					Unit:          "bytes",
+					ResourceKind:  "container",
+					Namespace:     pm.Namespace,
+					PodName:       pm.Name,
+					ContainerName: ctr.Name,
+					CollectedAt:   now,
+					Value:         float64(memBytes),
+				})
 			}
 		}
 

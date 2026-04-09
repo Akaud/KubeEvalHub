@@ -52,6 +52,10 @@ export default function ClustersPage() {
     navigate(`/dashboard/clusters/${agentId}/metrics`)
   }
 
+  const handleShowInventory = (agentId) => {
+    navigate(`/dashboard/clusters/${agentId}/inventory`)
+  }
+
   return (
     <>
       <div className="dashboard-header">
@@ -91,13 +95,23 @@ export default function ClustersPage() {
                       {c.status}
                     </span>
 
-                    <button
-                      type="button"
-                      className="dashboard-nav-button is-primary"
-                      onClick={() => handleShowMetrics(c.agentId)}
-                    >
-                      Show metrics
-                    </button>
+                    <div className="cluster-actions">
+                      <button
+                        type="button"
+                        className="dashboard-nav-button"
+                        onClick={() => handleShowInventory(c.agentId)}
+                      >
+                        Show inventory
+                      </button>
+
+                      <button
+                        type="button"
+                        className="dashboard-nav-button is-primary"
+                        onClick={() => handleShowMetrics(c.agentId)}
+                      >
+                        Show metrics
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}

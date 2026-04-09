@@ -30,9 +30,15 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 	agentHandler := handler.NewAgentHandler(agentService)
 
 	clusterRepo := repository.NewClusterRepository(pool)
+
 	metricRepo := repository.NewMetricRepository(pool)
 	metricService := service.NewMetricService(clusterRepo, metricRepo)
 	metricHandler := handler.NewMetricHandler(metricService)
+
+	inventoryRepo := repository.NewInventoryRepository(pool)
+	inventoryService := service.NewInventoryService(clusterRepo, inventoryRepo)
+	inventoryHandler := handler.NewInventoryHandler(inventoryService)
+
 	clusterService := service.NewClusterService(clusterRepo)
 	clusterHandler := handler.NewClusterHandler(clusterService)
 
@@ -75,6 +81,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 	r.Route("/agent", func(r chi.Router) {
 		r.Use(handler.AgentAuthMiddleware(agentService))
 		r.Post("/heartbeat", agentHandler.Heartbeat)
+		r.Post("/inventory", inventoryHandler.IngestInventory)
 		r.Post("/metrics", metricHandler.IngestMetrics)
 	})
 
@@ -82,6 +89,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 		r.Use(jwtAuthMiddleware)
 		r.Get("/", clusterHandler.ListClusters)
 		r.Get("/{id}/metrics", metricHandler.GetClusterMetrics)
+		r.Get("/{id}/inventory/latest", inventoryHandler.GetLatestInventory)
 		r.Post("/{id}/forecast", metricHandler.ForecastMetric)
 	})
 

@@ -106,7 +106,10 @@ metadata:
   name: kubeevalhub-agent
 rules:
   - apiGroups: [""]
-    resources: ["nodes", "pods"]
+    resources: ["namespaces", "nodes", "pods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
     verbs: ["get", "list"]
   - apiGroups: ["metrics.k8s.io"]
     resources: ["nodes", "pods"]

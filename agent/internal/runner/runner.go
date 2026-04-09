@@ -48,25 +48,40 @@ func (r *Runner) runOnce(ctx context.Context) error {
 		return err
 	}
 
+	collectedAt := time.Now().UTC()
+
+	inventory, err := kube.CollectInventory(ctx, r.kube)
+	if err != nil {
+		return err
+	}
+
+	if err := r.backend.PushInventory(ctx, model.PushInventoryRequest{
+		Cluster:     cluster,
+		CollectedAt: collectedAt,
+		Inventory:   inventory,
+	}); err != nil {
+		return err
+	}
+
 	samples, err := kube.CollectSamples(ctx, r.kube)
 	if err != nil {
 		return err
 	}
 
-	if len(samples) == 0 {
-		return nil
+	if len(samples) > 0 {
+		req := model.PushMetricsRequest{
+			Cluster: cluster,
+			Samples: samples,
+		}
+
+		if err := r.backend.PushMetrics(ctx, req); err != nil {
+			return err
+		}
 	}
 
-	req := model.PushMetricsRequest{
-		Cluster: cluster,
-		Samples: samples,
-	}
-
-	if err := r.backend.PushMetrics(ctx, req); err != nil {
+	if err := r.backend.Heartbeat(ctx); err != nil {
 		return err
 	}
-
-	_ = r.backend.Heartbeat(ctx)
 
 	return nil
 }

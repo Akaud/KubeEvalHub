@@ -5,6 +5,7 @@ import DashboardLayout from './pages/DashboardLayout'
 import ProfilePage from './pages/dashboard/ProfilePage'
 import ClustersPage from './pages/dashboard/ClustersPage'
 import ClusterMetricsDetailPage from './pages/dashboard/ClusterMetricsDetailPage'
+import ClusterInventoryDetailPage from './pages/dashboard/ClusterInventoryDetailPage'
 import AgentsPage from './pages/dashboard/AgentsPage'
 import SettingsPage from './pages/dashboard/SettingsPage'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -29,6 +30,7 @@ function App() {
         <Route path="profile" element={<ProfilePage />} />
         <Route path="clusters" element={<ClustersPage />} />
         <Route path="clusters/:agentId/metrics" element={<ClusterMetricsDetailPage />} />
+        <Route path="clusters/:agentId/inventory" element={<ClusterInventoryDetailPage />} />
         <Route path="agents" element={<AgentsPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>

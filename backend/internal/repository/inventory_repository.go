@@ -1,0 +1,621 @@
+package repository
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"backend/internal/model"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+var ErrInventorySnapshotNotFound = errors.New("inventory snapshot not found")
+
+type InventoryRepository interface {
+	InsertSnapshot(ctx context.Context, snapshot *model.InventorySnapshot) error
+	InsertNamespaces(ctx context.Context, items []model.NamespaceInventory) error
+	InsertNodes(ctx context.Context, items []model.NodeInventory) error
+	InsertWorkloads(ctx context.Context, items []model.WorkloadInventory) error
+	InsertPods(ctx context.Context, items []model.PodInventory) error
+	InsertContainers(ctx context.Context, items []model.ContainerInventory) error
+	GetLatestSnapshotForOwner(
+		ctx context.Context,
+		ownerID int64,
+		agentID string,
+	) (*model.InventorySnapshot, error)
+
+	GetNamespacesBySnapshotID(
+		ctx context.Context,
+		snapshotID string,
+	) ([]model.NamespaceInventory, error)
+
+	GetNodesBySnapshotID(
+		ctx context.Context,
+		snapshotID string,
+	) ([]model.NodeInventory, error)
+
+	GetWorkloadsBySnapshotID(
+		ctx context.Context,
+		snapshotID string,
+	) ([]model.WorkloadInventory, error)
+
+	GetPodsBySnapshotID(
+		ctx context.Context,
+		snapshotID string,
+	) ([]model.PodInventory, error)
+
+	GetContainersBySnapshotID(
+		ctx context.Context,
+		snapshotID string,
+	) ([]model.ContainerInventory, error)
+}
+
+type inventoryRepository struct {
+	pool *pgxpool.Pool
+}
+
+func NewInventoryRepository(pool *pgxpool.Pool) InventoryRepository {
+	return &inventoryRepository{pool: pool}
+}
+
+func (r *inventoryRepository) InsertSnapshot(ctx context.Context, snapshot *model.InventorySnapshot) error {
+	query := `
+		INSERT INTO inventory_snapshots (
+			id,
+			agent_id,
+			collected_at,
+			received_at,
+			created_at
+		)
+		VALUES ($1,$2,$3,$4,$5)
+	`
+	_, err := r.pool.Exec(
+		ctx,
+		query,
+		snapshot.ID,
+		snapshot.AgentID,
+		snapshot.CollectedAt,
+		snapshot.ReceivedAt,
+		snapshot.CreatedAt,
+	)
+	return err
+}
+
+func (r *inventoryRepository) InsertNamespaces(ctx context.Context, items []model.NamespaceInventory) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	batch := &pgx.Batch{}
+	query := `
+		INSERT INTO inventory_namespaces (
+			id,
+			snapshot_id,
+			uid,
+			name,
+			labels_json
+		)
+		VALUES ($1,$2,$3,$4,$5::jsonb)
+	`
+
+	for _, item := range items {
+		v := item
+		batch.Queue(query, v.ID, v.SnapshotID, v.UID, v.Name, v.LabelsJSON)
+	}
+
+	br := r.pool.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for range items {
+		if _, err := br.Exec(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *inventoryRepository) InsertNodes(ctx context.Context, items []model.NodeInventory) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	batch := &pgx.Batch{}
+	query := `
+		INSERT INTO inventory_nodes (
+			id,
+			snapshot_id,
+			uid,
+			name,
+			labels_json,
+			kubelet_version,
+			container_runtime_version,
+			operating_system,
+			architecture,
+			kernel_version,
+			os_image
+		)
+		VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11)
+	`
+
+	for _, item := range items {
+		v := item
+		batch.Queue(
+			query,
+			v.ID,
+			v.SnapshotID,
+			v.UID,
+			v.Name,
+			v.LabelsJSON,
+			v.KubeletVersion,
+			v.ContainerRuntime,
+			v.OperatingSystem,
+			v.Architecture,
+			v.KernelVersion,
+			v.OSImage,
+		)
+	}
+
+	br := r.pool.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for range items {
+		if _, err := br.Exec(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *inventoryRepository) InsertWorkloads(ctx context.Context, items []model.WorkloadInventory) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	batch := &pgx.Batch{}
+	query := `
+		INSERT INTO inventory_workloads (
+			id,
+			snapshot_id,
+			kind,
+			uid,
+			name,
+			namespace,
+			replicas,
+			labels_json
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
+	`
+
+	for _, item := range items {
+		v := item
+		batch.Queue(
+			query,
+			v.ID,
+			v.SnapshotID,
+			v.Kind,
+			v.UID,
+			v.Name,
+			v.Namespace,
+			v.Replicas,
+			v.LabelsJSON,
+		)
+	}
+
+	br := r.pool.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for range items {
+		if _, err := br.Exec(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *inventoryRepository) InsertPods(ctx context.Context, items []model.PodInventory) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	batch := &pgx.Batch{}
+	query := `
+		INSERT INTO inventory_pods (
+			id,
+			snapshot_id,
+			uid,
+			name,
+			namespace,
+			node_name,
+			phase,
+			owner_kind,
+			owner_name,
+			labels_json
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+	`
+
+	for _, item := range items {
+		v := item
+		batch.Queue(
+			query,
+			v.ID,
+			v.SnapshotID,
+			v.UID,
+			v.Name,
+			v.Namespace,
+			v.NodeName,
+			v.Phase,
+			v.OwnerKind,
+			v.OwnerName,
+			v.LabelsJSON,
+		)
+	}
+
+	br := r.pool.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for range items {
+		if _, err := br.Exec(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *inventoryRepository) InsertContainers(ctx context.Context, items []model.ContainerInventory) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	batch := &pgx.Batch{}
+	query := `
+		INSERT INTO inventory_containers (
+			id,
+			snapshot_id,
+			parent_kind,
+			parent_ref_id,
+			name,
+			image,
+			cpu_request_millicores,
+			cpu_limit_millicores,
+			memory_request_bytes,
+			memory_limit_bytes
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+	`
+
+	for _, item := range items {
+		v := item
+		batch.Queue(
+			query,
+			v.ID,
+			v.SnapshotID,
+			v.ParentKind,
+			v.ParentRefID,
+			v.Name,
+			v.Image,
+			v.CPURequestMillicores,
+			v.CPULimitMillicores,
+			v.MemoryRequestBytes,
+			v.MemoryLimitBytes,
+		)
+	}
+
+	br := r.pool.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for range items {
+		if _, err := br.Exec(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func nowUTCInventory() time.Time {
+	return time.Now().UTC()
+}
+
+func (r *inventoryRepository) GetLatestSnapshotForOwner(
+	ctx context.Context,
+	ownerID int64,
+	agentID string,
+) (*model.InventorySnapshot, error) {
+	query := `
+		SELECT
+			s.id,
+			s.agent_id,
+			s.collected_at,
+			s.received_at,
+			s.created_at
+		FROM inventory_snapshots s
+		JOIN agents a
+			ON a.id = s.agent_id
+		WHERE s.agent_id = $1
+		  AND a.owner_id = $2
+		ORDER BY s.collected_at DESC, s.created_at DESC
+		LIMIT 1
+	`
+
+	var snapshot model.InventorySnapshot
+	err := r.pool.QueryRow(ctx, query, agentID, ownerID).Scan(
+		&snapshot.ID,
+		&snapshot.AgentID,
+		&snapshot.CollectedAt,
+		&snapshot.ReceivedAt,
+		&snapshot.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrInventorySnapshotNotFound
+		}
+		return nil, err
+	}
+
+	return &snapshot, nil
+}
+
+func (r *inventoryRepository) GetNamespacesBySnapshotID(
+	ctx context.Context,
+	snapshotID string,
+) ([]model.NamespaceInventory, error) {
+	query := `
+		SELECT
+			id,
+			snapshot_id,
+			uid,
+			name,
+			labels_json::text
+		FROM inventory_namespaces
+		WHERE snapshot_id = $1
+		ORDER BY name ASC
+	`
+
+	rows, err := r.pool.Query(ctx, query, snapshotID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]model.NamespaceInventory, 0)
+	for rows.Next() {
+		var item model.NamespaceInventory
+		if err := rows.Scan(
+			&item.ID,
+			&item.SnapshotID,
+			&item.UID,
+			&item.Name,
+			&item.LabelsJSON,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
+
+func (r *inventoryRepository) GetNodesBySnapshotID(
+	ctx context.Context,
+	snapshotID string,
+) ([]model.NodeInventory, error) {
+	query := `
+		SELECT
+			id,
+			snapshot_id,
+			uid,
+			name,
+			labels_json::text,
+			kubelet_version,
+			container_runtime_version,
+			operating_system,
+			architecture,
+			kernel_version,
+			os_image
+		FROM inventory_nodes
+		WHERE snapshot_id = $1
+		ORDER BY name ASC
+	`
+
+	rows, err := r.pool.Query(ctx, query, snapshotID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]model.NodeInventory, 0)
+	for rows.Next() {
+		var item model.NodeInventory
+		if err := rows.Scan(
+			&item.ID,
+			&item.SnapshotID,
+			&item.UID,
+			&item.Name,
+			&item.LabelsJSON,
+			&item.KubeletVersion,
+			&item.ContainerRuntime,
+			&item.OperatingSystem,
+			&item.Architecture,
+			&item.KernelVersion,
+			&item.OSImage,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
+
+func (r *inventoryRepository) GetWorkloadsBySnapshotID(
+	ctx context.Context,
+	snapshotID string,
+) ([]model.WorkloadInventory, error) {
+	query := `
+		SELECT
+			id,
+			snapshot_id,
+			kind,
+			uid,
+			name,
+			namespace,
+			replicas,
+			labels_json::text
+		FROM inventory_workloads
+		WHERE snapshot_id = $1
+		ORDER BY kind ASC, namespace ASC NULLS FIRST, name ASC
+	`
+
+	rows, err := r.pool.Query(ctx, query, snapshotID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]model.WorkloadInventory, 0)
+	for rows.Next() {
+		var item model.WorkloadInventory
+		if err := rows.Scan(
+			&item.ID,
+			&item.SnapshotID,
+			&item.Kind,
+			&item.UID,
+			&item.Name,
+			&item.Namespace,
+			&item.Replicas,
+			&item.LabelsJSON,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
+
+func (r *inventoryRepository) GetPodsBySnapshotID(
+	ctx context.Context,
+	snapshotID string,
+) ([]model.PodInventory, error) {
+	query := `
+		SELECT
+			id,
+			snapshot_id,
+			uid,
+			name,
+			namespace,
+			node_name,
+			phase,
+			owner_kind,
+			owner_name,
+			labels_json::text
+		FROM inventory_pods
+		WHERE snapshot_id = $1
+		ORDER BY namespace ASC, name ASC
+	`
+
+	rows, err := r.pool.Query(ctx, query, snapshotID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]model.PodInventory, 0)
+	for rows.Next() {
+		var item model.PodInventory
+		if err := rows.Scan(
+			&item.ID,
+			&item.SnapshotID,
+			&item.UID,
+			&item.Name,
+			&item.Namespace,
+			&item.NodeName,
+			&item.Phase,
+			&item.OwnerKind,
+			&item.OwnerName,
+			&item.LabelsJSON,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
+
+func (r *inventoryRepository) GetContainersBySnapshotID(
+	ctx context.Context,
+	snapshotID string,
+) ([]model.ContainerInventory, error) {
+	query := `
+		SELECT
+			id,
+			snapshot_id,
+			parent_kind,
+			parent_ref_id,
+			name,
+			image,
+			cpu_request_millicores,
+			cpu_limit_millicores,
+			memory_request_bytes,
+			memory_limit_bytes
+		FROM inventory_containers
+		WHERE snapshot_id = $1
+		ORDER BY parent_kind ASC, parent_ref_id ASC, name ASC
+	`
+
+	rows, err := r.pool.Query(ctx, query, snapshotID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]model.ContainerInventory, 0)
+	for rows.Next() {
+		var item model.ContainerInventory
+		if err := rows.Scan(
+			&item.ID,
+			&item.SnapshotID,
+			&item.ParentKind,
+			&item.ParentRefID,
+			&item.Name,
+			&item.Image,
+			&item.CPURequestMillicores,
+			&item.CPULimitMillicores,
+			&item.MemoryRequestBytes,
+			&item.MemoryLimitBytes,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
