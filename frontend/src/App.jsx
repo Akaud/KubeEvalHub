@@ -29,13 +29,19 @@ function App() {
         <Route index element={<Navigate to="/dashboard/profile" replace />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="clusters" element={<ClustersPage />} />
-        <Route path="clusters/:agentId/metrics" element={<ClusterMetricsDetailPage />} />
-        <Route path="clusters/:agentId/inventory" element={<ClusterInventoryDetailPage />} />
+        <Route
+          path="clusters/:agentId/metrics"
+          element={<ClusterMetricsDetailPage />}
+        />
+        <Route
+          path="clusters/:agentId/inventory"
+          element={<ClusterInventoryDetailPage />}
+        />
         <Route path="agents" element={<AgentsPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
 
-      <Route path="*" element={<Navigate to="/dashboard/profile" replace />} />
+      <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   )
 }

@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
@@ -21,6 +23,7 @@ var (
 	ErrInvalidCredentials     = errors.New("invalid credentials")
 	ErrInvalidLoginIdentifier = errors.New("invalid login identifier")
 	ErrInvalidToken           = errors.New("invalid token")
+	ErrRefreshTokenExpired    = errors.New("refresh token expired")
 	ErrUserNotFound           = errors.New("user not found")
 	ErrEmailAlreadyExists     = errors.New("email already exists")
 )
@@ -35,15 +38,28 @@ type UserRepository interface {
 	Patch(ctx context.Context, id int64, name, email, password *string) (*model.User, error)
 }
 
-type UserService struct {
-	repo      UserRepository
-	jwtSecret []byte
+type RefreshTokenRepository interface {
+	Create(ctx context.Context, token repository.RefreshToken) error
+	GetByHash(ctx context.Context, tokenHash string) (*repository.RefreshToken, error)
+	RevokeByHash(ctx context.Context, tokenHash string) error
+	Rotate(ctx context.Context, oldHash string, newToken repository.RefreshToken) error
 }
 
-func NewUserService(repo UserRepository, jwtSecret string) *UserService {
+type UserService struct {
+	repo        UserRepository
+	refreshRepo RefreshTokenRepository
+	jwtSecret   []byte
+	accessTTL   time.Duration
+	refreshTTL  time.Duration
+}
+
+func NewUserService(repo UserRepository, refreshRepo RefreshTokenRepository, jwtSecret string) *UserService {
 	return &UserService{
-		repo:      repo,
-		jwtSecret: []byte(jwtSecret),
+		repo:        repo,
+		refreshRepo: refreshRepo,
+		jwtSecret:   []byte(jwtSecret),
+		accessTTL:   20 * time.Minute,
+		refreshTTL:  7 * 24 * time.Hour,
 	}
 }
 
@@ -64,7 +80,6 @@ func normalizeEmail(email string) (string, error) {
 }
 
 func normalizePassword(password string) (string, error) {
-	password = strings.TrimSpace(password)
 	if password == "" {
 		return "", ErrInvalidUserPassword
 	}
@@ -254,53 +269,17 @@ type authClaims struct {
 	jwt.RegisteredClaims
 }
 
-func (s *UserService) AuthenticateUser(ctx context.Context, identifier, password string) (string, error) {
-	identifier, err := normalizeLoginIdentifier(identifier)
-	if err != nil {
+func generateRefreshToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
+	return hex.EncodeToString(b), nil
+}
 
-	password, err = normalizePassword(password)
-	if err != nil {
-		return "", err
-	}
-
-	var user *model.User
-
-	if strings.Contains(identifier, "@") {
-		email, err := normalizeEmail(identifier)
-		if err != nil {
-			return "", ErrInvalidCredentials
-		}
-
-		user, err = s.repo.GetByEmail(ctx, email)
-		if err != nil {
-			if errors.Is(err, repository.ErrUserNotFound) {
-				return "", ErrInvalidCredentials
-			}
-			return "", err
-		}
-	} else {
-		name, err := normalizeName(identifier)
-		if err != nil {
-			return "", ErrInvalidCredentials
-		}
-
-		user, err = s.repo.GetByName(ctx, name)
-		if err != nil {
-			if errors.Is(err, repository.ErrUserNotFound) {
-				return "", ErrInvalidCredentials
-			}
-			return "", err
-		}
-	}
-
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		return "", ErrInvalidCredentials
-	}
-
+func (s *UserService) generateAccessToken(user *model.User) (string, error) {
 	now := time.Now().UTC()
-	expiresAt := now.Add(20 * time.Minute)
+	expiresAt := now.Add(s.accessTTL)
 
 	claims := authClaims{
 		UserID: user.ID,
@@ -319,6 +298,73 @@ func (s *UserService) AuthenticateUser(ctx context.Context, identifier, password
 	}
 
 	return signedToken, nil
+}
+
+func (s *UserService) AuthenticateUser(ctx context.Context, identifier, password string) (string, string, error) {
+	identifier, err := normalizeLoginIdentifier(identifier)
+	if err != nil {
+		return "", "", err
+	}
+
+	password, err = normalizePassword(password)
+	if err != nil {
+		return "", "", err
+	}
+
+	var user *model.User
+
+	if strings.Contains(identifier, "@") {
+		email, err := normalizeEmail(identifier)
+		if err != nil {
+			return "", "", ErrInvalidCredentials
+		}
+
+		user, err = s.repo.GetByEmail(ctx, email)
+		if err != nil {
+			if errors.Is(err, repository.ErrUserNotFound) {
+				return "", "", ErrInvalidCredentials
+			}
+			return "", "", err
+		}
+	} else {
+		name, err := normalizeName(identifier)
+		if err != nil {
+			return "", "", ErrInvalidCredentials
+		}
+
+		user, err = s.repo.GetByName(ctx, name)
+		if err != nil {
+			if errors.Is(err, repository.ErrUserNotFound) {
+				return "", "", ErrInvalidCredentials
+			}
+			return "", "", err
+		}
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+		return "", "", ErrInvalidCredentials
+	}
+
+	accessToken, err := s.generateAccessToken(user)
+	if err != nil {
+		return "", "", err
+	}
+
+	refreshToken, err := generateRefreshToken()
+	if err != nil {
+		return "", "", err
+	}
+
+	err = s.refreshRepo.Create(ctx, repository.RefreshToken{
+		UserID:    user.ID,
+		TokenHash: hashToken(refreshToken),
+		ExpiresAt: time.Now().UTC().Add(s.refreshTTL),
+	})
+	if err != nil {
+		return "", "", err
+	}
+
+	return accessToken, refreshToken, nil
 }
 
 func (s *UserService) ValidateToken(ctx context.Context, tokenString string) (int64, error) {
@@ -346,4 +392,78 @@ func (s *UserService) ValidateToken(ctx context.Context, tokenString string) (in
 	}
 
 	return claims.UserID, nil
+}
+
+func (s *UserService) RefreshToken(ctx context.Context, rawRefreshToken string) (string, string, error) {
+	if strings.TrimSpace(rawRefreshToken) == "" {
+		return "", "", ErrInvalidToken
+	}
+
+	tokenHash := hashToken(rawRefreshToken)
+
+	storedToken, err := s.refreshRepo.GetByHash(ctx, tokenHash)
+	if err != nil {
+		if errors.Is(err, repository.ErrRefreshTokenNotFound) {
+			return "", "", ErrInvalidToken
+		}
+		return "", "", err
+	}
+
+	now := time.Now().UTC()
+
+	if storedToken.RevokedAt != nil {
+		return "", "", ErrInvalidToken
+	}
+
+	if now.After(storedToken.ExpiresAt) {
+		return "", "", ErrRefreshTokenExpired
+	}
+
+	user, err := s.repo.GetByID(ctx, storedToken.UserID)
+	if err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return "", "", ErrUserNotFound
+		}
+		return "", "", err
+	}
+
+	newAccessToken, err := s.generateAccessToken(user)
+	if err != nil {
+		return "", "", err
+	}
+
+	newRefreshToken, err := generateRefreshToken()
+	if err != nil {
+		return "", "", err
+	}
+
+	err = s.refreshRepo.Rotate(ctx, tokenHash, repository.RefreshToken{
+		UserID:    storedToken.UserID,
+		TokenHash: hashToken(newRefreshToken),
+		ExpiresAt: now.Add(s.refreshTTL),
+	})
+	if err != nil {
+		if errors.Is(err, repository.ErrRefreshTokenNotFound) {
+			return "", "", ErrInvalidToken
+		}
+		return "", "", err
+	}
+
+	return newAccessToken, newRefreshToken, nil
+}
+
+func (s *UserService) RevokeRefreshToken(ctx context.Context, rawRefreshToken string) error {
+	if strings.TrimSpace(rawRefreshToken) == "" {
+		return ErrInvalidToken
+	}
+
+	err := s.refreshRepo.RevokeByHash(ctx, hashToken(rawRefreshToken))
+	if err != nil {
+		if errors.Is(err, repository.ErrRefreshTokenNotFound) {
+			return ErrInvalidToken
+		}
+		return err
+	}
+
+	return nil
 }

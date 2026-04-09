@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { apiFetch } from '../../utils/apiFetch'
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -195,7 +196,7 @@ function MetricsTooltip({ active, payload, label }) {
 export default function ClusterMetricsDetailPage() {
   const { agentId } = useParams()
   const navigate = useNavigate()
-  const { token } = useAuth()
+  const { isAuthenticated, isReady } = useAuth()
 
   const [cluster, setCluster] = useState(null)
   const [metrics, setMetrics] = useState(null)
@@ -216,16 +217,12 @@ export default function ClusterMetricsDetailPage() {
   const [predictionSteps, setPredictionSteps] = useState(8)
   const [predictionModel, setPredictionModel] = useState('moving_average')
 
-  const authToken = useMemo(() => {
-    return token || localStorage.getItem('token') || ''
-  }, [token])
-
   const selectedPredictionModel = useMemo(() => {
     return PREDICTION_MODELS.find((model) => model.value === predictionModel) || PREDICTION_MODELS[0]
   }, [predictionModel])
 
   const loadClusterAndMetrics = useCallback(async (refresh = false) => {
-    if (!authToken || !agentId) return
+    if (!isAuthenticated || !agentId) return
 
     if (refresh) {
       setIsRefreshing(true)
@@ -238,12 +235,7 @@ export default function ClusterMetricsDetailPage() {
     setShowPrediction(false)
 
     try {
-      const clustersRes = await fetch('/api/clusters', {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      })
-
+      const clustersRes = await apiFetch('/api/clusters')
       const clustersData = await clustersRes.json().catch(() => null)
 
       if (!clustersRes.ok) {
@@ -254,13 +246,8 @@ export default function ClusterMetricsDetailPage() {
       const currentCluster = clusters.find((item) => item.agentId === agentId) || null
       setCluster(currentCluster)
 
-      const metricsRes = await fetch(
-        `/api/clusters/${agentId}/metrics?from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00Z`,
-        {
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-          },
-        }
+      const metricsRes = await apiFetch(
+        `/api/clusters/${agentId}/metrics?from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00Z`
       )
 
       const metricsData = await metricsRes.json().catch(() => null)
@@ -276,11 +263,12 @@ export default function ClusterMetricsDetailPage() {
       setIsLoading(false)
       setIsRefreshing(false)
     }
-  }, [authToken, agentId])
+  }, [isAuthenticated, agentId])
 
   useEffect(() => {
+    if (!isReady || !isAuthenticated) return
     loadClusterAndMetrics(false)
-  }, [loadClusterAndMetrics])
+  }, [isReady, isAuthenticated, loadClusterAndMetrics])
 
   const metricsTree = useMemo(() => {
     return buildMetricsTree(metrics?.items || [])
@@ -396,7 +384,7 @@ export default function ClusterMetricsDetailPage() {
   }, [predictionHistoryLimit, predictionSteps, predictionModel])
 
   const loadPrediction = useCallback(async () => {
-    if (!authToken || !agentId || !selectedItem) return
+    if (!isAuthenticated || !agentId || !selectedItem) return
 
     setIsPredicting(true)
     setError('')
@@ -410,12 +398,8 @@ export default function ClusterMetricsDetailPage() {
         historyLimit: predictionHistoryLimit,
       }
 
-      const res = await fetch(`/api/clusters/${agentId}/forecast`, {
+      const res = await apiFetch(`/api/clusters/${agentId}/forecast`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify(body),
       })
 
@@ -434,7 +418,7 @@ export default function ClusterMetricsDetailPage() {
     } finally {
       setIsPredicting(false)
     }
-  }, [authToken, agentId, selectedItem, predictionHistoryLimit, predictionSteps, predictionModel])
+  }, [isAuthenticated, agentId, selectedItem, predictionHistoryLimit, predictionSteps, predictionModel])
 
   const forecastPoints = useMemo(() => {
     if (!showPrediction) return []
@@ -476,90 +460,90 @@ export default function ClusterMetricsDetailPage() {
       <section className="dashboard-cards dashboard-cards-single">
         <div className="dashboard-card">
           <div className="metrics-page-toolbar">
-          <div className="metrics-toolbar-left">
-            <button
-              type="button"
-              className="dashboard-nav-button"
-              onClick={() => navigate('/dashboard/clusters')}
-            >
-              Back to clusters
-            </button>
+            <div className="metrics-toolbar-left">
+              <button
+                type="button"
+                className="dashboard-nav-button"
+                onClick={() => navigate('/dashboard/clusters')}
+              >
+                Back to clusters
+              </button>
 
-            <button
-              type="button"
-              className="dashboard-nav-button is-primary"
-              onClick={() => loadClusterAndMetrics(true)}
-              disabled={isLoading || isRefreshing || isPredicting}
-            >
-              {isRefreshing ? 'Refreshing...' : 'Refresh metrics'}
-            </button>
-          </div>
-
-          <div className="metrics-toolbar-right">
-            <div className="metrics-toolbar-controls">
-              <div className="metrics-toolbar-control">
-                <label htmlFor="prediction-model-select">Model</label>
-                <select
-                  id="prediction-model-select"
-                  value={predictionModel}
-                  onChange={(e) => setPredictionModel(e.target.value)}
-                  disabled={isLoading || isRefreshing || isPredicting}
-                >
-                  {PREDICTION_MODELS.map((model) => (
-                    <option key={model.value} value={model.value}>
-                      {model.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="metrics-toolbar-control">
-                <label htmlFor="prediction-history-select">History</label>
-                <select
-                  id="prediction-history-select"
-                  value={predictionHistoryLimit}
-                  onChange={(e) => setPredictionHistoryLimit(Number(e.target.value))}
-                  disabled={isLoading || isRefreshing || isPredicting}
-                >
-                  <option value={60}>60</option>
-                  <option value={120}>120</option>
-                  <option value={240}>240</option>
-                  <option value={300}>300</option>
-                </select>
-              </div>
-
-              <div className="metrics-toolbar-control">
-                <label htmlFor="prediction-steps-select">Steps</label>
-                <select
-                  id="prediction-steps-select"
-                  value={predictionSteps}
-                  onChange={(e) => setPredictionSteps(Number(e.target.value))}
-                  disabled={isLoading || isRefreshing || isPredicting}
-                >
-                  <option value={4}>4</option>
-                  <option value={8}>8</option>
-                  <option value={12}>12</option>
-                  <option value={20}>20</option>
-                </select>
-              </div>
+              <button
+                type="button"
+                className="dashboard-nav-button is-primary"
+                onClick={() => loadClusterAndMetrics(true)}
+                disabled={isLoading || isRefreshing || isPredicting}
+              >
+                {isRefreshing ? 'Refreshing...' : 'Refresh metrics'}
+              </button>
             </div>
 
-            <button
-              type="button"
-              className={`dashboard-nav-button ${showPrediction ? 'is-primary' : ''}`}
-              onClick={() => {
-                if (showPrediction) {
-                  setShowPrediction(false)
-                } else {
-                  loadPrediction()
-                }
-              }}
-              disabled={!selectedItem || isLoading || isRefreshing || isPredicting}
-            >
-              {isPredicting ? 'Predicting...' : showPrediction ? 'Hide prediction' : 'Prediction'}
-            </button>
+            <div className="metrics-toolbar-right">
+              <div className="metrics-toolbar-controls">
+                <div className="metrics-toolbar-control">
+                  <label htmlFor="prediction-model-select">Model</label>
+                  <select
+                    id="prediction-model-select"
+                    value={predictionModel}
+                    onChange={(e) => setPredictionModel(e.target.value)}
+                    disabled={isLoading || isRefreshing || isPredicting}
+                  >
+                    {PREDICTION_MODELS.map((model) => (
+                      <option key={model.value} value={model.value}>
+                        {model.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="metrics-toolbar-control">
+                  <label htmlFor="prediction-history-select">History</label>
+                  <select
+                    id="prediction-history-select"
+                    value={predictionHistoryLimit}
+                    onChange={(e) => setPredictionHistoryLimit(Number(e.target.value))}
+                    disabled={isLoading || isRefreshing || isPredicting}
+                  >
+                    <option value={60}>60</option>
+                    <option value={120}>120</option>
+                    <option value={240}>240</option>
+                    <option value={300}>300</option>
+                  </select>
+                </div>
+
+                <div className="metrics-toolbar-control">
+                  <label htmlFor="prediction-steps-select">Steps</label>
+                  <select
+                    id="prediction-steps-select"
+                    value={predictionSteps}
+                    onChange={(e) => setPredictionSteps(Number(e.target.value))}
+                    disabled={isLoading || isRefreshing || isPredicting}
+                  >
+                    <option value={4}>4</option>
+                    <option value={8}>8</option>
+                    <option value={12}>12</option>
+                    <option value={20}>20</option>
+                  </select>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className={`dashboard-nav-button ${showPrediction ? 'is-primary' : ''}`}
+                onClick={() => {
+                  if (showPrediction) {
+                    setShowPrediction(false)
+                  } else {
+                    loadPrediction()
+                  }
+                }}
+                disabled={!selectedItem || isLoading || isRefreshing || isPredicting}
+              >
+                {isPredicting ? 'Predicting...' : showPrediction ? 'Hide prediction' : 'Prediction'}
+              </button>
+            </div>
           </div>
-        </div>
 
           <div className="prediction-model-help">
             <strong>{selectedPredictionModel.label}</strong>

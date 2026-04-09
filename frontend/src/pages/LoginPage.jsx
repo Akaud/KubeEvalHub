@@ -11,13 +11,13 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const navigate = useNavigate()
-  const { login, isAuthenticated } = useAuth()
+  const { login, isAuthenticated, isReady } = useAuth()
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isReady && isAuthenticated) {
       navigate('/dashboard/profile', { replace: true })
     }
-  }, [isAuthenticated, navigate])
+  }, [isAuthenticated, isReady, navigate])
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -34,7 +34,7 @@ export default function LoginPage() {
     e.preventDefault()
 
     const identifier = form.identifier.trim()
-    const password = form.password.trim()
+    const password = form.password
 
     if (!identifier || !password) return
 
@@ -54,7 +54,12 @@ export default function LoginPage() {
         return
       }
 
-      login(data.token)
+      if (!data?.accessToken || !data?.refreshToken) {
+        setError('Login response is invalid')
+        return
+      }
+
+      login(data.accessToken, data.refreshToken)
       navigate('/dashboard/profile', { replace: true })
     } catch {
       setError('Network error')

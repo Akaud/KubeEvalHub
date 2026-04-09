@@ -22,7 +22,8 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 	r.Use(middleware.Recoverer)
 
 	userRepo := repository.NewUserRepository(pool)
-	userService := service.NewUserService(userRepo, cfg.JWTSecret)
+	refreshTokenRepo := repository.NewRefreshTokenRepository(pool)
+	userService := service.NewUserService(userRepo, refreshTokenRepo, cfg.JWTSecret)
 	userHandler := handler.New(userService)
 
 	agentRepo := repository.NewAgentRepository(pool)
@@ -51,6 +52,8 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 
 	// public routes
 	r.Post("/auth/login", userHandler.Login)
+	r.Post("/auth/refresh", userHandler.RefreshToken)
+	r.Post("/auth/logout", userHandler.Logout)
 
 	r.Route("/users", func(r chi.Router) {
 		// registration must stay public

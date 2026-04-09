@@ -1,12 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
+import { apiFetch } from '../../utils/apiFetch'
 
 export default function ProfilePage() {
-  const { token } = useAuth()
-
-  const authToken = useMemo(() => {
-    return token || localStorage.getItem('token') || ''
-  }, [token])
+  const { isAuthenticated, isReady } = useAuth()
 
   const [currentUser, setCurrentUser] = useState(null)
   const [isLoadingUser, setIsLoadingUser] = useState(false)
@@ -26,18 +23,13 @@ export default function ProfilePage() {
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false)
 
   const loadCurrentUser = useCallback(async () => {
-    if (!authToken) return
+    if (!isAuthenticated) return
 
     setIsLoadingUser(true)
     setProfileError('')
 
     try {
-      const res = await fetch('/api/users/me', {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      })
-
+      const res = await apiFetch('/api/users/me')
       const data = await res.json().catch(() => null)
 
       if (!res.ok) {
@@ -51,27 +43,24 @@ export default function ProfilePage() {
     } finally {
       setIsLoadingUser(false)
     }
-  }, [authToken])
+  }, [isAuthenticated])
 
   useEffect(() => {
+    if (!isReady || !isAuthenticated) return
     loadCurrentUser()
-  }, [loadCurrentUser])
+  }, [isReady, isAuthenticated, loadCurrentUser])
 
   async function patchUser(fields) {
-    if (!authToken) {
-      throw new Error('Missing authentication token')
+    if (!isAuthenticated) {
+      throw new Error('Missing authentication')
     }
 
     if (!currentUser?.id) {
       throw new Error('Missing current user id')
     }
 
-    const res = await fetch(`/api/users/${currentUser.id}`, {
+    const res = await apiFetch(`/api/users/${currentUser.id}`, {
       method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify(fields),
     })
 
@@ -136,8 +125,7 @@ export default function ProfilePage() {
     setPasswordError('')
     setPasswordSuccess('')
 
-    const trimmedPassword = password.trim()
-    if (!trimmedPassword) {
+    if (!password) {
       setPasswordError('Enter a new password')
       return
     }
@@ -151,7 +139,7 @@ export default function ProfilePage() {
     setIsSavingPassword(true)
 
     try {
-      await patchUser({ password: password.trim() })
+      await patchUser({ password })
       setPasswordSuccess('Password updated successfully')
       setPassword('')
       setShowPasswordConfirm(false)

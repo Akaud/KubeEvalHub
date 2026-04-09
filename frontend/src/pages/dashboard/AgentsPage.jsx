@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useAuth } from '../../context/AuthContext'
+import { useEffect, useState } from 'react'
 import {
   FiPlus,
   FiCopy,
@@ -7,6 +6,8 @@ import {
   FiX,
   FiRefreshCw,
 } from 'react-icons/fi'
+import { useAuth } from '../../context/AuthContext'
+import { apiFetch } from '../../utils/apiFetch'
 
 export default function AgentsPage() {
   const [showCreateAgentModal, setShowCreateAgentModal] = useState(false)
@@ -28,11 +29,7 @@ export default function AgentsPage() {
   const [togglingAgentId, setTogglingAgentId] = useState('')
   const [deletingAgentId, setDeletingAgentId] = useState('')
 
-  const { token } = useAuth()
-
-  const authToken = useMemo(() => {
-    return token || localStorage.getItem('token') || ''
-  }, [token])
+  const { isAuthenticated, isReady } = useAuth()
 
   const parseDurationToMs = (value) => {
     if (value == null) return null
@@ -178,7 +175,7 @@ kubectl apply -f agent.yaml`
   }
 
   const loadAgents = async ({ silent = false } = {}) => {
-    if (!authToken) return
+    if (!isAuthenticated) return
 
     if (silent) {
       setIsRefreshingAgents(true)
@@ -189,11 +186,7 @@ kubectl apply -f agent.yaml`
     setAgentsError('')
 
     try {
-      const response = await fetch('/api/agents', {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      })
+      const response = await apiFetch('/api/agents')
 
       const data = await response.json().catch(() => null)
 
@@ -221,7 +214,7 @@ kubectl apply -f agent.yaml`
   }
 
   useEffect(() => {
-    if (!authToken) return
+    if (!isReady || !isAuthenticated) return
 
     loadAgents()
 
@@ -230,7 +223,7 @@ kubectl apply -f agent.yaml`
     }, 15000)
 
     return () => window.clearInterval(intervalId)
-  }, [authToken])
+  }, [isReady, isAuthenticated])
 
   const openCreateAgentModal = () => {
     setAgentName('')
@@ -272,8 +265,8 @@ kubectl apply -f agent.yaml`
       return
     }
 
-    if (!authToken) {
-      setCreateAgentError('Authentication token is missing.')
+    if (!isAuthenticated) {
+      setCreateAgentError('Authentication is missing.')
       return
     }
 
@@ -286,12 +279,8 @@ kubectl apply -f agent.yaml`
     setInstallStepsCopied(false)
 
     try {
-      const response = await fetch('/api/agents', {
+      const response = await apiFetch('/api/agents', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
         body: JSON.stringify({
           name: trimmedName,
         }),
@@ -314,7 +303,7 @@ kubectl apply -f agent.yaml`
   }
 
   const handleDeleteAgent = async (agentId, agentName) => {
-    if (!authToken) return
+    if (!isAuthenticated) return
 
     const confirmed = window.confirm(
       `Delete agent "${agentName}"? This will stop backend authorization for that agent and remove its stored data.`
@@ -326,11 +315,8 @@ kubectl apply -f agent.yaml`
     setAgentsError('')
 
     try {
-      const response = await fetch(`/api/agents/${agentId}`, {
+      const response = await apiFetch(`/api/agents/${agentId}`, {
         method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
       })
 
       const data = await response.json().catch(() => null)
@@ -356,18 +342,14 @@ kubectl apply -f agent.yaml`
   }
 
   const handleToggleAgent = async (agentId, enabled) => {
-    if (!authToken) return
+    if (!isAuthenticated) return
 
     setTogglingAgentId(agentId)
     setAgentsError('')
 
     try {
-      const response = await fetch(`/api/agents/${agentId}/enabled`, {
+      const response = await apiFetch(`/api/agents/${agentId}/enabled`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
         body: JSON.stringify({ enabled }),
       })
 

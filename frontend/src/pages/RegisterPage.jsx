@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { FiEye, FiEyeOff } from 'react-icons/fi'
 import '../styles/RegisterPage.css'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 
 export default function RegisterPage() {
   const [form, setForm] = useState({
@@ -21,6 +22,7 @@ export default function RegisterPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const navigate = useNavigate()
+  const { login } = useAuth()
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
   useEffect(() => {
@@ -67,8 +69,8 @@ export default function RegisterPage() {
 
     const username = form.username.trim()
     const email = form.email.trim()
-    const password = form.password.trim()
-    const confirmPassword = form.confirmPassword.trim()
+    const password = form.password
+    const confirmPassword = form.confirmPassword
 
     setError('')
     setToast('')
@@ -113,20 +115,13 @@ export default function RegisterPage() {
         return
       }
 
-      setForm({
-        username: '',
-        email: '',
-        password: '',
-        confirmPassword: '',
-        consent: false,
-      })
-      setIsEmailValid(false)
-      setPasswordsMatch(true)
-      setToast('Registration successful')
+      if (!data?.accessToken || !data?.refreshToken) {
+        setError('Registration response is invalid')
+        return
+      }
 
-      setTimeout(() => {
-        navigate('/login', { replace: true })
-      }, 1500)
+      login(data.accessToken, data.refreshToken)
+      navigate('/dashboard/profile', { replace: true })
     } catch {
       setError('Network error')
     } finally {

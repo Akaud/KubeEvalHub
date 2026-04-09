@@ -1,32 +1,24 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { apiFetch } from '../../utils/apiFetch'
 
 export default function ClustersPage() {
   const [clusters, setClusters] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const { token } = useAuth()
+  const { isAuthenticated, isReady } = useAuth()
   const navigate = useNavigate()
 
-  const authToken = useMemo(() => {
-    return token || localStorage.getItem('token') || ''
-  }, [token])
-
   const loadClusters = async () => {
-    if (!authToken) return
+    if (!isAuthenticated) return
 
     setIsLoading(true)
     setError('')
 
     try {
-      const res = await fetch('/api/clusters', {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      })
-
+      const res = await apiFetch('/api/clusters')
       const data = await res.json().catch(() => null)
 
       if (!res.ok) {
@@ -42,11 +34,13 @@ export default function ClustersPage() {
   }
 
   useEffect(() => {
+    if (!isReady || !isAuthenticated) return
+
     loadClusters()
 
     const id = setInterval(loadClusters, 15000)
     return () => clearInterval(id)
-  }, [authToken])
+  }, [isReady, isAuthenticated])
 
   const handleShowMetrics = (agentId) => {
     navigate(`/dashboard/clusters/${agentId}/metrics`)

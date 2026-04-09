@@ -27,8 +27,22 @@ type loginRequest struct {
 	Password   string `json:"password"`
 }
 
-type loginResponse struct {
-	Token string `json:"token"`
+type authResponse struct {
+	AccessToken  string `json:"accessToken"`
+	RefreshToken string `json:"refreshToken"`
+}
+
+type refreshRequest struct {
+	RefreshToken string `json:"refreshToken"`
+}
+
+type refreshResponse struct {
+	AccessToken  string `json:"accessToken"`
+	RefreshToken string `json:"refreshToken"`
+}
+
+type logoutRequest struct {
+	RefreshToken string `json:"refreshToken"`
 }
 
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
@@ -38,13 +52,50 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.userService.AuthenticateUser(r.Context(), req.Identifier, req.Password)
+	accessToken, refreshToken, err := h.userService.AuthenticateUser(r.Context(), req.Identifier, req.Password)
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, loginResponse{Token: token})
+	writeJSON(w, http.StatusOK, authResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+	})
+}
+
+func (h *Handler) RefreshToken(w http.ResponseWriter, r *http.Request) {
+	var req refreshRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	accessToken, refreshToken, err := h.userService.RefreshToken(r.Context(), req.RefreshToken)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, refreshResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+	})
+}
+
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	var req logoutRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.userService.RevokeRefreshToken(r.Context(), req.RefreshToken); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -60,8 +111,22 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	accessToken, refreshToken, err := h.userService.AuthenticateUser(r.Context(), req.Email, req.Password)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "user created but token generation failed")
+		return
+	}
+
 	w.Header().Set("Location", "/users/"+strconv.FormatInt(user.ID, 10))
-	writeJSON(w, http.StatusCreated, user)
+	writeJSON(w, http.StatusCreated, struct {
+		User         any    `json:"user"`
+		AccessToken  string `json:"accessToken"`
+		RefreshToken string `json:"refreshToken"`
+	}{
+		User:         user,
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+	})
 }
 
 func requireSameUser(r *http.Request, targetUserID int64) error {
@@ -184,7 +249,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		errors.Is(err, service.ErrInvalidUserPassword):
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrInvalidCredentials),
-		errors.Is(err, service.ErrInvalidToken):
+		errors.Is(err, service.ErrInvalidToken),
+		errors.Is(err, service.ErrRefreshTokenExpired):
 		writeError(w, http.StatusUnauthorized, err.Error())
 	case errors.Is(err, service.ErrUserNotFound):
 		writeError(w, http.StatusNotFound, err.Error())

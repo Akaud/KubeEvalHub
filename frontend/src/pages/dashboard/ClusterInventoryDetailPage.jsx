@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { apiFetch } from '../../utils/apiFetch'
 
 function formatFullDateTime(value) {
   const date = new Date(value)
@@ -82,7 +83,7 @@ function getPhaseBadgeClass(phase) {
 export default function ClusterInventoryDetailPage() {
   const { agentId } = useParams()
   const navigate = useNavigate()
-  const { token } = useAuth()
+  const { isAuthenticated, isReady } = useAuth()
 
   const [cluster, setCluster] = useState(null)
   const [inventory, setInventory] = useState(null)
@@ -90,12 +91,8 @@ export default function ClusterInventoryDetailPage() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [error, setError] = useState('')
 
-  const authToken = useMemo(() => {
-    return token || localStorage.getItem('token') || ''
-  }, [token])
-
   const loadClusterAndInventory = useCallback(async (refresh = false) => {
-    if (!authToken || !agentId) return
+    if (!isAuthenticated || !agentId) return
 
     if (refresh) {
       setIsRefreshing(true)
@@ -106,12 +103,7 @@ export default function ClusterInventoryDetailPage() {
     setError('')
 
     try {
-      const clustersRes = await fetch('/api/clusters', {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      })
-
+      const clustersRes = await apiFetch('/api/clusters')
       const clustersData = await clustersRes.json().catch(() => null)
 
       if (!clustersRes.ok) {
@@ -122,12 +114,7 @@ export default function ClusterInventoryDetailPage() {
       const currentCluster = clusters.find((item) => item.agentId === agentId) || null
       setCluster(currentCluster)
 
-      const inventoryRes = await fetch(`/api/clusters/${agentId}/inventory/latest`, {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      })
-
+      const inventoryRes = await apiFetch(`/api/clusters/${agentId}/inventory/latest`)
       const inventoryData = await inventoryRes.json().catch(() => null)
 
       if (!inventoryRes.ok) {
@@ -141,11 +128,12 @@ export default function ClusterInventoryDetailPage() {
       setIsLoading(false)
       setIsRefreshing(false)
     }
-  }, [authToken, agentId])
+  }, [isAuthenticated, agentId])
 
   useEffect(() => {
+    if (!isReady || !isAuthenticated) return
     loadClusterAndInventory(false)
-  }, [loadClusterAndInventory])
+  }, [isReady, isAuthenticated, loadClusterAndInventory])
 
   const inventoryPayload = inventory?.inventory || null
 
