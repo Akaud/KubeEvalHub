@@ -11,17 +11,24 @@ type MetricSample struct {
 }
 
 type MetricSampleRow struct {
-	SeriesID      string
-	AgentID       string
-	MetricName    string
-	MetricType    string
-	Unit          string
-	ResourceKind  string
+	SeriesID string
+	AgentID  string
+
+	MetricName   string
+	MetricType   string
+	Unit         string
+	ResourceKind string
+
 	NodeName      *string
 	Namespace     *string
 	PodName       *string
+	PodUID        *string
 	ContainerName *string
-	LabelsHash    string
-	CollectedAt   time.Time
-	Value         float64
+
+	ControllerUID  *string
+	ControllerKind *string
+	ControllerName *string
+
+	CollectedAt time.Time
+	Value       float64
 }

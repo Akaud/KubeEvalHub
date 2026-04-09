@@ -22,11 +22,17 @@ CREATE TABLE metric_series (
     metric_type text NOT NULL,
     unit text NOT NULL,
     resource_kind text NOT NULL,
+
     node_name text,
     namespace text,
     pod_name text,
+    pod_uid text,
     container_name text,
-    labels_hash text NOT NULL,
+
+    controller_uid text,
+    controller_kind text,
+    controller_name text,
+
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL
 );
@@ -39,8 +45,11 @@ ON metric_series (
     node_name,
     namespace,
     pod_name,
+    pod_uid,
     container_name,
-    labels_hash
+    controller_uid,
+    controller_kind,
+    controller_name
 )
 NULLS NOT DISTINCT;
 
@@ -50,6 +59,12 @@ ON metric_series (agent_id);
 CREATE INDEX metric_series_agent_metric_idx
 ON metric_series (agent_id, metric_name);
 
+CREATE INDEX metric_series_agent_controller_idx
+ON metric_series (agent_id, controller_uid);
+
+CREATE INDEX metric_series_agent_namespace_idx
+ON metric_series (agent_id, namespace);
+
 CREATE TABLE metric_samples (
     id uuid PRIMARY KEY,
     series_id uuid NOT NULL REFERENCES metric_series(id) ON DELETE CASCADE,
@@ -57,6 +72,9 @@ CREATE TABLE metric_samples (
     received_at timestamptz NOT NULL,
     value_double double precision NOT NULL
 );
+
+CREATE UNIQUE INDEX metric_samples_series_collected_at_uidx
+ON metric_samples (series_id, collected_at);
 
 CREATE INDEX metric_samples_series_time_idx
 ON metric_samples (series_id, collected_at DESC);
@@ -71,8 +89,11 @@ ON metric_samples (collected_at DESC);
 
 DROP INDEX IF EXISTS metric_samples_collected_at_idx;
 DROP INDEX IF EXISTS metric_samples_series_time_idx;
+DROP INDEX IF EXISTS metric_samples_series_collected_at_uidx;
 DROP TABLE IF EXISTS metric_samples;
 
+DROP INDEX IF EXISTS metric_series_agent_namespace_idx;
+DROP INDEX IF EXISTS metric_series_agent_controller_idx;
 DROP INDEX IF EXISTS metric_series_agent_metric_idx;
 DROP INDEX IF EXISTS metric_series_agent_id_idx;
 DROP INDEX IF EXISTS metric_series_identity_uidx;

@@ -2,6 +2,9 @@ package runner
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"log"
 	"time"
 
@@ -15,6 +18,11 @@ type Runner struct {
 	cfg     config.Config
 	kube    *kube.Clients
 	backend *transport.Client
+
+	cluster model.ClusterPayload
+
+	lastInventoryHash string
+	lastInventorySent time.Time
 }
 
 func New(cfg config.Config, kubeClients *kube.Clients, backend *transport.Client) *Runner {
@@ -26,62 +34,149 @@ func New(cfg config.Config, kubeClients *kube.Clients, backend *transport.Client
 }
 
 func (r *Runner) Run(ctx context.Context) error {
-	ticker := time.NewTicker(r.cfg.ScrapeInterval)
-	defer ticker.Stop()
-
-	for {
-		if err := r.runOnce(ctx); err != nil {
-			log.Printf("runOnce error: %v", err)
-		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-		}
-	}
-}
-
-func (r *Runner) runOnce(ctx context.Context) error {
 	cluster, err := kube.DiscoverCluster(ctx, r.kube)
 	if err != nil {
 		return err
 	}
+	r.cluster = cluster
 
-	collectedAt := time.Now().UTC()
+	metricsInterval := r.cfg.ScrapeInterval
+	if metricsInterval <= 0 {
+		metricsInterval = time.Minute
+	}
 
+	inventoryInterval := metricsInterval * 10
+	if inventoryInterval < 5*time.Minute {
+		inventoryInterval = 5 * time.Minute
+	}
+
+	heartbeatInterval := metricsInterval
+	if heartbeatInterval <= 0 {
+		heartbeatInterval = time.Minute
+	}
+
+	metricsTicker := time.NewTicker(metricsInterval)
+	inventoryTicker := time.NewTicker(inventoryInterval)
+	heartbeatTicker := time.NewTicker(heartbeatInterval)
+	defer metricsTicker.Stop()
+	defer inventoryTicker.Stop()
+	defer heartbeatTicker.Stop()
+
+	if err := r.runInventory(ctx, true); err != nil {
+		log.Printf("initial inventory sync error: %v", err)
+	}
+	if err := r.runMetrics(ctx); err != nil {
+		log.Printf("initial metrics push error: %v", err)
+	}
+	if err := r.runHeartbeat(ctx); err != nil {
+		log.Printf("initial heartbeat error: %v", err)
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+
+		case <-inventoryTicker.C:
+			if err := r.runInventory(ctx, false); err != nil {
+				log.Printf("inventory sync error: %v", err)
+			}
+
+		case <-metricsTicker.C:
+			if err := r.runMetrics(ctx); err != nil {
+				log.Printf("metrics push error: %v", err)
+			}
+
+		case <-heartbeatTicker.C:
+			if err := r.runHeartbeat(ctx); err != nil {
+				log.Printf("heartbeat error: %v", err)
+			}
+		}
+	}
+}
+
+func (r *Runner) runInventory(ctx context.Context, force bool) error {
 	inventory, err := kube.CollectInventory(ctx, r.kube)
 	if err != nil {
 		return err
 	}
 
-	if err := r.backend.PushInventory(ctx, model.PushInventoryRequest{
-		Cluster:     cluster,
-		CollectedAt: collectedAt,
-		Inventory:   inventory,
-	}); err != nil {
-		return err
-	}
-
-	samples, err := kube.CollectSamples(ctx, r.kube)
+	revisionHash, err := computeInventoryRevisionHash(inventory)
 	if err != nil {
 		return err
 	}
 
-	if len(samples) > 0 {
-		req := model.PushMetricsRequest{
-			Cluster: cluster,
-			Samples: samples,
-		}
-
-		if err := r.backend.PushMetrics(ctx, req); err != nil {
-			return err
-		}
+	if !force && revisionHash == r.lastInventoryHash {
+		return nil
 	}
 
-	if err := r.backend.Heartbeat(ctx); err != nil {
+	collectedAt := time.Now().UTC()
+
+	req := model.PushInventoryRequest{
+		Cluster:      r.cluster,
+		CollectedAt:  collectedAt,
+		RevisionHash: revisionHash,
+		Inventory:    inventory,
+	}
+
+	if err := r.backend.PushInventory(ctx, req); err != nil {
 		return err
 	}
 
+	r.lastInventoryHash = revisionHash
+	r.lastInventorySent = collectedAt
 	return nil
+}
+
+func (r *Runner) runMetrics(ctx context.Context) error {
+	samples, err := kube.CollectSamples(ctx, r.kube)
+	if err != nil {
+		return err
+	}
+	if len(samples) == 0 {
+		return nil
+	}
+
+	req := model.PushMetricsRequest{
+		Cluster:          r.cluster,
+		BatchCollectedAt: time.Now().UTC(),
+		Source:           "metrics-server",
+		Samples:          samples,
+	}
+
+	return r.backend.PushMetrics(ctx, req)
+}
+
+func (r *Runner) runHeartbeat(ctx context.Context) error {
+	return r.backend.Heartbeat(ctx)
+}
+
+func computeInventoryRevisionHash(inventory model.InventoryPayload) (string, error) {
+	normalized, err := normalizeInventoryForHash(inventory)
+	if err != nil {
+		return "", err
+	}
+
+	b, err := json.Marshal(normalized)
+	if err != nil {
+		return "", err
+	}
+
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func normalizeInventoryForHash(inventory model.InventoryPayload) (model.InventoryPayload, error) {
+	b, err := json.Marshal(inventory)
+	if err != nil {
+		return model.InventoryPayload{}, err
+	}
+
+	var out model.InventoryPayload
+	if err := json.Unmarshal(b, &out); err != nil {
+		return model.InventoryPayload{}, err
+	}
+
+	sortInventoryPayload(&out)
+	return out, nil
 }

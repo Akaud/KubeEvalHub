@@ -3,19 +3,25 @@ package model
 import "time"
 
 type MetricSeries struct {
-	ID            string    `json:"id"`
-	AgentID       string    `json:"agentId"`
-	MetricName    string    `json:"metricName"`
-	MetricType    string    `json:"metricType"`
-	Unit          string    `json:"unit"`
-	ResourceKind  string    `json:"resourceKind"`
-	NodeName      *string   `json:"nodeName,omitempty"`
-	Namespace     *string   `json:"namespace,omitempty"`
-	PodName       *string   `json:"podName,omitempty"`
-	ContainerName *string   `json:"containerName,omitempty"`
-	LabelsHash    string    `json:"labelsHash"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	ID           string `json:"id"`
+	AgentID      string `json:"agentId"`
+	MetricName   string `json:"metricName"`
+	MetricType   string `json:"metricType"`
+	Unit         string `json:"unit"`
+	ResourceKind string `json:"resourceKind"`
+
+	NodeName      *string `json:"nodeName,omitempty"`
+	Namespace     *string `json:"namespace,omitempty"`
+	PodName       *string `json:"podName,omitempty"`
+	PodUID        *string `json:"podUid,omitempty"`
+	ContainerName *string `json:"containerName,omitempty"`
+
+	ControllerUID  *string `json:"controllerUid,omitempty"`
+	ControllerKind *string `json:"controllerKind,omitempty"`
+	ControllerName *string `json:"controllerName,omitempty"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type MetricSeriesPoint struct {

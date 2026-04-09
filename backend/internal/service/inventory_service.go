@@ -85,11 +85,12 @@ func (s *inventoryService) IngestInventory(ctx context.Context, agentID string, 
 	}
 
 	snapshot := &model.InventorySnapshot{
-		ID:          uuid.NewString(),
-		AgentID:     agentID,
-		CollectedAt: req.CollectedAt,
-		ReceivedAt:  now,
-		CreatedAt:   now,
+		ID:           uuid.NewString(),
+		AgentID:      agentID,
+		CollectedAt:  req.CollectedAt,
+		ReceivedAt:   now,
+		CreatedAt:    now,
+		RevisionHash: stringPtrOrNil(req.RevisionHash),
 	}
 	if err := s.inventoryRepo.InsertSnapshot(ctx, snapshot); err != nil {
 		return err
@@ -118,17 +119,23 @@ func (s *inventoryService) IngestInventory(ctx context.Context, agentID string, 
 			return ErrInvalidInventoryPayload
 		}
 		nodes = append(nodes, model.NodeInventory{
-			ID:               uuid.NewString(),
-			SnapshotID:       snapshot.ID,
-			UID:              strings.TrimSpace(item.UID),
-			Name:             strings.TrimSpace(item.Name),
-			LabelsJSON:       mustJSONPtr(item.Labels),
-			KubeletVersion:   stringPtrOrNil(item.KubeletVersion),
-			ContainerRuntime: stringPtrOrNil(item.ContainerRuntime),
-			OperatingSystem:  stringPtrOrNil(item.OperatingSystem),
-			Architecture:     stringPtrOrNil(item.Architecture),
-			KernelVersion:    stringPtrOrNil(item.KernelVersion),
-			OSImage:          stringPtrOrNil(item.OSImage),
+			ID:                       uuid.NewString(),
+			SnapshotID:               snapshot.ID,
+			UID:                      strings.TrimSpace(item.UID),
+			Name:                     strings.TrimSpace(item.Name),
+			LabelsJSON:               mustJSONPtr(item.Labels),
+			KubeletVersion:           stringPtrOrNil(item.KubeletVersion),
+			ContainerRuntime:         stringPtrOrNil(item.ContainerRuntime),
+			OperatingSystem:          stringPtrOrNil(item.OperatingSystem),
+			Architecture:             stringPtrOrNil(item.Architecture),
+			KernelVersion:            stringPtrOrNil(item.KernelVersion),
+			OSImage:                  stringPtrOrNil(item.OSImage),
+			CPUCapacityMillicores:    item.CPUCapacityMillicores,
+			MemoryCapacityBytes:      item.MemoryCapacityBytes,
+			CPUAllocatableMillicores: item.CPUAllocatableMillicores,
+			MemoryAllocatableBytes:   item.MemoryAllocatableBytes,
+			PodCapacity:              item.PodCapacity,
+			PodAllocatable:           item.PodAllocatable,
 		})
 	}
 	if err := s.inventoryRepo.InsertNodes(ctx, nodes); err != nil {
@@ -139,6 +146,7 @@ func (s *inventoryService) IngestInventory(ctx context.Context, agentID string, 
 		len(req.Inventory.Deployments)+len(req.Inventory.StatefulSets)+len(req.Inventory.DaemonSets),
 	)
 	containers := make([]model.ContainerInventory, 0)
+	containerStatuses := make([]model.ContainerStatusInventory, 0)
 
 	for _, item := range req.Inventory.Deployments {
 		if strings.TrimSpace(item.UID) == "" || strings.TrimSpace(item.Name) == "" || strings.TrimSpace(item.Namespace) == "" {
@@ -206,19 +214,21 @@ func (s *inventoryService) IngestInventory(ctx context.Context, agentID string, 
 
 		podID := uuid.NewString()
 		pods = append(pods, model.PodInventory{
-			ID:         podID,
-			SnapshotID: snapshot.ID,
-			UID:        strings.TrimSpace(item.UID),
-			Name:       strings.TrimSpace(item.Name),
-			Namespace:  strings.TrimSpace(item.Namespace),
-			NodeName:   stringPtrOrNil(item.NodeName),
-			Phase:      stringPtrOrNil(item.Phase),
-			OwnerKind:  stringPtrOrNil(item.OwnerKind),
-			OwnerName:  stringPtrOrNil(item.OwnerName),
-			LabelsJSON: mustJSONPtr(item.Labels),
+			ID:             podID,
+			SnapshotID:     snapshot.ID,
+			UID:            strings.TrimSpace(item.UID),
+			Name:           strings.TrimSpace(item.Name),
+			Namespace:      strings.TrimSpace(item.Namespace),
+			NodeName:       stringPtrOrNil(item.NodeName),
+			Phase:          stringPtrOrNil(item.Phase),
+			ControllerUID:  stringPtrOrNil(item.ControllerUID),
+			ControllerKind: stringPtrOrNil(item.ControllerKind),
+			ControllerName: stringPtrOrNil(item.ControllerName),
+			LabelsJSON:     mustJSONPtr(item.Labels),
 		})
 
 		containers = append(containers, toContainerInventory(snapshot.ID, "pod", podID, item.Containers)...)
+		containerStatuses = append(containerStatuses, toContainerStatusInventory(snapshot.ID, podID, item.ContainerStatuses)...)
 	}
 
 	if err := s.inventoryRepo.InsertPods(ctx, pods); err != nil {
@@ -226,6 +236,10 @@ func (s *inventoryService) IngestInventory(ctx context.Context, agentID string, 
 	}
 
 	if err := s.inventoryRepo.InsertContainers(ctx, containers); err != nil {
+		return err
+	}
+
+	if err := s.inventoryRepo.InsertContainerStatuses(ctx, containerStatuses); err != nil {
 		return err
 	}
 
@@ -254,6 +268,36 @@ func toContainerInventory(
 			CPULimitMillicores:   item.CPULimitMillicores,
 			MemoryRequestBytes:   item.MemoryRequestBytes,
 			MemoryLimitBytes:     item.MemoryLimitBytes,
+			IsInitContainer:      item.IsInitContainer,
+		})
+	}
+	return out
+}
+
+func toContainerStatusInventory(
+	snapshotID string,
+	podRefID string,
+	items []model.ContainerStatusPayload,
+) []model.ContainerStatusInventory {
+	out := make([]model.ContainerStatusInventory, 0, len(items))
+	for _, item := range items {
+		if strings.TrimSpace(item.Name) == "" {
+			continue
+		}
+		out = append(out, model.ContainerStatusInventory{
+			ID:                      uuid.NewString(),
+			SnapshotID:              snapshotID,
+			PodRefID:                podRefID,
+			Name:                    strings.TrimSpace(item.Name),
+			ContainerID:             stringPtrOrNil(item.ContainerID),
+			RestartCount:            item.RestartCount,
+			Ready:                   item.Ready,
+			Started:                 item.Started,
+			State:                   stringPtrOrNil(item.State),
+			LastTerminationReason:   stringPtrOrNil(item.LastTerminationReason),
+			LastTerminationExitCode: item.LastTerminationExitCode,
+			OOMKilled:               item.OOMKilled,
+			IsInitContainer:         item.IsInitContainer,
 		})
 	}
 	return out
@@ -314,9 +358,19 @@ func (s *inventoryService) GetLatestInventory(
 		return nil, err
 	}
 
+	containerStatuses, err := s.inventoryRepo.GetContainerStatusesBySnapshotID(ctx, snapshot.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	containerMap := make(map[string][]model.ContainerInventory)
 	for _, c := range containers {
 		containerMap[c.ParentRefID] = append(containerMap[c.ParentRefID], c)
+	}
+
+	containerStatusMap := make(map[string][]model.ContainerStatusInventory)
+	for _, st := range containerStatuses {
+		containerStatusMap[st.PodRefID] = append(containerStatusMap[st.PodRefID], st)
 	}
 
 	resp := &model.InventorySnapshotResponse{
@@ -342,15 +396,21 @@ func (s *inventoryService) GetLatestInventory(
 
 	for _, item := range nodes {
 		resp.Inventory.Nodes = append(resp.Inventory.Nodes, model.NodePayload{
-			UID:              item.UID,
-			Name:             item.Name,
-			Labels:           parseLabelsJSON(item.LabelsJSON),
-			KubeletVersion:   derefString(item.KubeletVersion),
-			ContainerRuntime: derefString(item.ContainerRuntime),
-			OperatingSystem:  derefString(item.OperatingSystem),
-			Architecture:     derefString(item.Architecture),
-			KernelVersion:    derefString(item.KernelVersion),
-			OSImage:          derefString(item.OSImage),
+			UID:                      item.UID,
+			Name:                     item.Name,
+			Labels:                   parseLabelsJSON(item.LabelsJSON),
+			KubeletVersion:           derefString(item.KubeletVersion),
+			ContainerRuntime:         derefString(item.ContainerRuntime),
+			OperatingSystem:          derefString(item.OperatingSystem),
+			Architecture:             derefString(item.Architecture),
+			KernelVersion:            derefString(item.KernelVersion),
+			OSImage:                  derefString(item.OSImage),
+			CPUCapacityMillicores:    item.CPUCapacityMillicores,
+			MemoryCapacityBytes:      item.MemoryCapacityBytes,
+			CPUAllocatableMillicores: item.CPUAllocatableMillicores,
+			MemoryAllocatableBytes:   item.MemoryAllocatableBytes,
+			PodCapacity:              item.PodCapacity,
+			PodAllocatable:           item.PodAllocatable,
 		})
 	}
 
@@ -389,15 +449,17 @@ func (s *inventoryService) GetLatestInventory(
 
 	for _, item := range pods {
 		resp.Inventory.Pods = append(resp.Inventory.Pods, model.PodPayload{
-			UID:        item.UID,
-			Name:       item.Name,
-			Namespace:  item.Namespace,
-			NodeName:   derefString(item.NodeName),
-			Phase:      derefString(item.Phase),
-			OwnerKind:  derefString(item.OwnerKind),
-			OwnerName:  derefString(item.OwnerName),
-			Labels:     parseLabelsJSON(item.LabelsJSON),
-			Containers: toContainerSpecPayloads(containerMap[item.ID]),
+			UID:               item.UID,
+			Name:              item.Name,
+			Namespace:         item.Namespace,
+			NodeName:          derefString(item.NodeName),
+			Phase:             derefString(item.Phase),
+			Labels:            parseLabelsJSON(item.LabelsJSON),
+			ControllerUID:     derefString(item.ControllerUID),
+			ControllerKind:    derefString(item.ControllerKind),
+			ControllerName:    derefString(item.ControllerName),
+			Containers:        toContainerSpecPayloads(containerMap[item.ID]),
+			ContainerStatuses: toContainerStatusPayloads(containerStatusMap[item.ID]),
 		})
 	}
 
@@ -430,6 +492,30 @@ func toContainerSpecPayloads(items []model.ContainerInventory) []model.Container
 			CPULimitMillicores:   item.CPULimitMillicores,
 			MemoryRequestBytes:   item.MemoryRequestBytes,
 			MemoryLimitBytes:     item.MemoryLimitBytes,
+			IsInitContainer:      item.IsInitContainer,
+		})
+	}
+	return out
+}
+
+func toContainerStatusPayloads(items []model.ContainerStatusInventory) []model.ContainerStatusPayload {
+	if len(items) == 0 {
+		return nil
+	}
+
+	out := make([]model.ContainerStatusPayload, 0, len(items))
+	for _, item := range items {
+		out = append(out, model.ContainerStatusPayload{
+			Name:                    item.Name,
+			ContainerID:             derefString(item.ContainerID),
+			RestartCount:            item.RestartCount,
+			Ready:                   item.Ready,
+			Started:                 item.Started,
+			State:                   derefString(item.State),
+			LastTerminationReason:   derefString(item.LastTerminationReason),
+			LastTerminationExitCode: item.LastTerminationExitCode,
+			OOMKilled:               item.OOMKilled,
+			IsInitContainer:         item.IsInitContainer,
 		})
 	}
 	return out

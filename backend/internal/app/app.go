@@ -39,6 +39,12 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 	inventoryRepo := repository.NewInventoryRepository(pool)
 	inventoryService := service.NewInventoryService(clusterRepo, inventoryRepo)
 	inventoryHandler := handler.NewInventoryHandler(inventoryService)
+	analysisService := service.NewAnalysisService(metricRepo, inventoryRepo)
+	analysisHandler := handler.NewAnalysisHandler(analysisService)
+	overProvisionHandler := handler.NewOverProvisionHandler(analysisService)
+	underProvisionHandler := handler.NewUnderProvisionHandler(analysisService)
+	recommendationHandler := handler.NewRecommendationHandler(analysisService)
+	capacityHandler := handler.NewCapacityHandler(analysisService)
 
 	clusterService := service.NewClusterService(clusterRepo)
 	clusterHandler := handler.NewClusterHandler(clusterService)
@@ -94,6 +100,11 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 		r.Get("/{id}/metrics", metricHandler.GetClusterMetrics)
 		r.Get("/{id}/inventory/latest", inventoryHandler.GetLatestInventory)
 		r.Post("/{id}/forecast", metricHandler.ForecastMetric)
+		r.Get("/{id}/analysis/utilization", analysisHandler.GetWorkloadUtilization)
+		r.Get("/{id}/analysis/overprovisioned", overProvisionHandler.GetOverProvisionedWorkloads)
+		r.Get("/{id}/analysis/underprovisioned", underProvisionHandler.GetUnderProvisionedWorkloads)
+		r.Get("/{id}/recommendations", recommendationHandler.GetRightSizingRecommendations)
+		r.Get("/{id}/capacity", capacityHandler.GetClusterCapacity)
 	})
 
 	return &http.Server{

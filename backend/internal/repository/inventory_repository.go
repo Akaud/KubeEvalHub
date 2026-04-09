@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"errors"
-	"time"
 
 	"backend/internal/model"
 
@@ -20,6 +19,8 @@ type InventoryRepository interface {
 	InsertWorkloads(ctx context.Context, items []model.WorkloadInventory) error
 	InsertPods(ctx context.Context, items []model.PodInventory) error
 	InsertContainers(ctx context.Context, items []model.ContainerInventory) error
+	InsertContainerStatuses(ctx context.Context, items []model.ContainerStatusInventory) error
+
 	GetLatestSnapshotForOwner(
 		ctx context.Context,
 		ownerID int64,
@@ -50,6 +51,11 @@ type InventoryRepository interface {
 		ctx context.Context,
 		snapshotID string,
 	) ([]model.ContainerInventory, error)
+
+	GetContainerStatusesBySnapshotID(
+		ctx context.Context,
+		snapshotID string,
+	) ([]model.ContainerStatusInventory, error)
 }
 
 type inventoryRepository struct {
@@ -67,9 +73,10 @@ func (r *inventoryRepository) InsertSnapshot(ctx context.Context, snapshot *mode
 			agent_id,
 			collected_at,
 			received_at,
-			created_at
+			created_at,
+			revision_hash
 		)
-		VALUES ($1,$2,$3,$4,$5)
+		VALUES ($1,$2,$3,$4,$5,$6)
 	`
 	_, err := r.pool.Exec(
 		ctx,
@@ -79,6 +86,7 @@ func (r *inventoryRepository) InsertSnapshot(ctx context.Context, snapshot *mode
 		snapshot.CollectedAt,
 		snapshot.ReceivedAt,
 		snapshot.CreatedAt,
+		snapshot.RevisionHash,
 	)
 	return err
 }
@@ -135,9 +143,15 @@ func (r *inventoryRepository) InsertNodes(ctx context.Context, items []model.Nod
 			operating_system,
 			architecture,
 			kernel_version,
-			os_image
+			os_image,
+			cpu_capacity_millicores,
+			memory_capacity_bytes,
+			cpu_allocatable_millicores,
+			memory_allocatable_bytes,
+			pod_capacity,
+			pod_allocatable
 		)
-		VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11)
+		VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
 	`
 
 	for _, item := range items {
@@ -155,6 +169,12 @@ func (r *inventoryRepository) InsertNodes(ctx context.Context, items []model.Nod
 			v.Architecture,
 			v.KernelVersion,
 			v.OSImage,
+			v.CPUCapacityMillicores,
+			v.MemoryCapacityBytes,
+			v.CPUAllocatableMillicores,
+			v.MemoryAllocatableBytes,
+			v.PodCapacity,
+			v.PodAllocatable,
 		)
 	}
 
@@ -232,11 +252,12 @@ func (r *inventoryRepository) InsertPods(ctx context.Context, items []model.PodI
 			namespace,
 			node_name,
 			phase,
-			owner_kind,
-			owner_name,
+			controller_uid,
+			controller_kind,
+			controller_name,
 			labels_json
 		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)
 	`
 
 	for _, item := range items {
@@ -250,8 +271,9 @@ func (r *inventoryRepository) InsertPods(ctx context.Context, items []model.PodI
 			v.Namespace,
 			v.NodeName,
 			v.Phase,
-			v.OwnerKind,
-			v.OwnerName,
+			v.ControllerUID,
+			v.ControllerKind,
+			v.ControllerName,
 			v.LabelsJSON,
 		)
 	}
@@ -285,9 +307,10 @@ func (r *inventoryRepository) InsertContainers(ctx context.Context, items []mode
 			cpu_request_millicores,
 			cpu_limit_millicores,
 			memory_request_bytes,
-			memory_limit_bytes
+			memory_limit_bytes,
+			is_init_container
 		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 	`
 
 	for _, item := range items {
@@ -304,6 +327,7 @@ func (r *inventoryRepository) InsertContainers(ctx context.Context, items []mode
 			v.CPULimitMillicores,
 			v.MemoryRequestBytes,
 			v.MemoryLimitBytes,
+			v.IsInitContainer,
 		)
 	}
 
@@ -319,8 +343,61 @@ func (r *inventoryRepository) InsertContainers(ctx context.Context, items []mode
 	return nil
 }
 
-func nowUTCInventory() time.Time {
-	return time.Now().UTC()
+func (r *inventoryRepository) InsertContainerStatuses(ctx context.Context, items []model.ContainerStatusInventory) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	batch := &pgx.Batch{}
+	query := `
+		INSERT INTO inventory_container_statuses (
+			id,
+			snapshot_id,
+			pod_ref_id,
+			name,
+			container_id,
+			restart_count,
+			ready,
+			started,
+			state,
+			last_termination_reason,
+			last_termination_exit_code,
+			oom_killed,
+			is_init_container
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+	`
+
+	for _, item := range items {
+		v := item
+		batch.Queue(
+			query,
+			v.ID,
+			v.SnapshotID,
+			v.PodRefID,
+			v.Name,
+			v.ContainerID,
+			v.RestartCount,
+			v.Ready,
+			v.Started,
+			v.State,
+			v.LastTerminationReason,
+			v.LastTerminationExitCode,
+			v.OOMKilled,
+			v.IsInitContainer,
+		)
+	}
+
+	br := r.pool.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for range items {
+		if _, err := br.Exec(); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (r *inventoryRepository) GetLatestSnapshotForOwner(
@@ -334,7 +411,8 @@ func (r *inventoryRepository) GetLatestSnapshotForOwner(
 			s.agent_id,
 			s.collected_at,
 			s.received_at,
-			s.created_at
+			s.created_at,
+			s.revision_hash
 		FROM inventory_snapshots s
 		JOIN agents a
 			ON a.id = s.agent_id
@@ -351,6 +429,7 @@ func (r *inventoryRepository) GetLatestSnapshotForOwner(
 		&snapshot.CollectedAt,
 		&snapshot.ReceivedAt,
 		&snapshot.CreatedAt,
+		&snapshot.RevisionHash,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -422,7 +501,13 @@ func (r *inventoryRepository) GetNodesBySnapshotID(
 			operating_system,
 			architecture,
 			kernel_version,
-			os_image
+			os_image,
+			cpu_capacity_millicores,
+			memory_capacity_bytes,
+			cpu_allocatable_millicores,
+			memory_allocatable_bytes,
+			pod_capacity,
+			pod_allocatable
 		FROM inventory_nodes
 		WHERE snapshot_id = $1
 		ORDER BY name ASC
@@ -449,6 +534,12 @@ func (r *inventoryRepository) GetNodesBySnapshotID(
 			&item.Architecture,
 			&item.KernelVersion,
 			&item.OSImage,
+			&item.CPUCapacityMillicores,
+			&item.MemoryCapacityBytes,
+			&item.CPUAllocatableMillicores,
+			&item.MemoryAllocatableBytes,
+			&item.PodCapacity,
+			&item.PodAllocatable,
 		); err != nil {
 			return nil, err
 		}
@@ -525,8 +616,9 @@ func (r *inventoryRepository) GetPodsBySnapshotID(
 			namespace,
 			node_name,
 			phase,
-			owner_kind,
-			owner_name,
+			controller_uid,
+			controller_kind,
+			controller_name,
 			labels_json::text
 		FROM inventory_pods
 		WHERE snapshot_id = $1
@@ -550,8 +642,9 @@ func (r *inventoryRepository) GetPodsBySnapshotID(
 			&item.Namespace,
 			&item.NodeName,
 			&item.Phase,
-			&item.OwnerKind,
-			&item.OwnerName,
+			&item.ControllerUID,
+			&item.ControllerKind,
+			&item.ControllerName,
 			&item.LabelsJSON,
 		); err != nil {
 			return nil, err
@@ -581,10 +674,11 @@ func (r *inventoryRepository) GetContainersBySnapshotID(
 			cpu_request_millicores,
 			cpu_limit_millicores,
 			memory_request_bytes,
-			memory_limit_bytes
+			memory_limit_bytes,
+			is_init_container
 		FROM inventory_containers
 		WHERE snapshot_id = $1
-		ORDER BY parent_kind ASC, parent_ref_id ASC, name ASC
+		ORDER BY parent_kind ASC, parent_ref_id ASC, is_init_container ASC, name ASC
 	`
 
 	rows, err := r.pool.Query(ctx, query, snapshotID)
@@ -607,6 +701,67 @@ func (r *inventoryRepository) GetContainersBySnapshotID(
 			&item.CPULimitMillicores,
 			&item.MemoryRequestBytes,
 			&item.MemoryLimitBytes,
+			&item.IsInitContainer,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
+
+func (r *inventoryRepository) GetContainerStatusesBySnapshotID(
+	ctx context.Context,
+	snapshotID string,
+) ([]model.ContainerStatusInventory, error) {
+	query := `
+		SELECT
+			id,
+			snapshot_id,
+			pod_ref_id,
+			name,
+			container_id,
+			restart_count,
+			ready,
+			started,
+			state,
+			last_termination_reason,
+			last_termination_exit_code,
+			oom_killed,
+			is_init_container
+		FROM inventory_container_statuses
+		WHERE snapshot_id = $1
+		ORDER BY pod_ref_id ASC, is_init_container ASC, name ASC
+	`
+
+	rows, err := r.pool.Query(ctx, query, snapshotID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]model.ContainerStatusInventory, 0)
+	for rows.Next() {
+		var item model.ContainerStatusInventory
+		if err := rows.Scan(
+			&item.ID,
+			&item.SnapshotID,
+			&item.PodRefID,
+			&item.Name,
+			&item.ContainerID,
+			&item.RestartCount,
+			&item.Ready,
+			&item.Started,
+			&item.State,
+			&item.LastTerminationReason,
+			&item.LastTerminationExitCode,
+			&item.OOMKilled,
+			&item.IsInitContainer,
 		); err != nil {
 			return nil, err
 		}

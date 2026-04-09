@@ -33,7 +33,11 @@ type MetricRepository interface {
 		nodeName *string,
 		namespace *string,
 		podName *string,
+		podUID *string,
 		containerName *string,
+		controllerUID *string,
+		controllerKind *string,
+		controllerName *string,
 	) (*model.MetricSeries, error)
 	GetSeriesByIDForOwner(
 		ctx context.Context,
@@ -68,12 +72,15 @@ func (r *metricRepository) UpsertSeries(ctx context.Context, series *model.Metri
 			node_name,
 			namespace,
 			pod_name,
+			pod_uid,
 			container_name,
-			labels_hash,
+			controller_uid,
+			controller_kind,
+			controller_name,
 			created_at,
 			updated_at
 		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 		ON CONFLICT (
 			agent_id,
 			metric_name,
@@ -81,8 +88,11 @@ func (r *metricRepository) UpsertSeries(ctx context.Context, series *model.Metri
 			node_name,
 			namespace,
 			pod_name,
+			pod_uid,
 			container_name,
-			labels_hash
+			controller_uid,
+			controller_kind,
+			controller_name
 		)
 		DO UPDATE SET
 			metric_type = EXCLUDED.metric_type,
@@ -104,8 +114,11 @@ func (r *metricRepository) UpsertSeries(ctx context.Context, series *model.Metri
 		series.NodeName,
 		series.Namespace,
 		series.PodName,
+		series.PodUID,
 		series.ContainerName,
-		series.LabelsHash,
+		series.ControllerUID,
+		series.ControllerKind,
+		series.ControllerName,
 		series.CreatedAt,
 		series.UpdatedAt,
 	).Scan(&id)
@@ -126,6 +139,7 @@ func (r *metricRepository) InsertSample(ctx context.Context, sample *model.Metri
 			value_double
 		)
 		VALUES ($1,$2,$3,$4,$5)
+		ON CONFLICT (series_id, collected_at) DO NOTHING
 	`
 
 	_, err := r.pool.Exec(
@@ -157,11 +171,13 @@ func (r *metricRepository) InsertSamples(ctx context.Context, samples []model.Me
 			value_double
 		)
 		VALUES ($1,$2,$3,$4,$5)
+		ON CONFLICT (series_id, collected_at) DO NOTHING
 	`
 
 	for _, sample := range samples {
 		s := sample
-		batch.Queue(query,
+		batch.Queue(
+			query,
 			s.ID,
 			s.SeriesID,
 			s.CollectedAt,
@@ -174,17 +190,12 @@ func (r *metricRepository) InsertSamples(ctx context.Context, samples []model.Me
 	defer br.Close()
 
 	for range samples {
-		_, err := br.Exec()
-		if err != nil {
+		if _, err := br.Exec(); err != nil {
 			return err
 		}
 	}
 
 	return nil
-}
-
-func nowUTCMetric() time.Time {
-	return time.Now().UTC()
 }
 
 func (r *metricRepository) GetClusterMetricSamples(
@@ -205,8 +216,11 @@ func (r *metricRepository) GetClusterMetricSamples(
 			msr.node_name,
 			msr.namespace,
 			msr.pod_name,
+			msr.pod_uid,
 			msr.container_name,
-			msr.labels_hash,
+			msr.controller_uid,
+			msr.controller_kind,
+			msr.controller_name,
 			mss.collected_at,
 			mss.value_double
 		FROM agent_clusters ac
@@ -249,8 +263,11 @@ func (r *metricRepository) GetClusterMetricSamples(
 			&row.NodeName,
 			&row.Namespace,
 			&row.PodName,
+			&row.PodUID,
 			&row.ContainerName,
-			&row.LabelsHash,
+			&row.ControllerUID,
+			&row.ControllerKind,
+			&row.ControllerName,
 			&row.CollectedAt,
 			&row.Value,
 		); err != nil {
@@ -275,7 +292,11 @@ func (r *metricRepository) FindSeriesByIdentity(
 	nodeName *string,
 	namespace *string,
 	podName *string,
+	podUID *string,
 	containerName *string,
+	controllerUID *string,
+	controllerKind *string,
+	controllerName *string,
 ) (*model.MetricSeries, error) {
 	query := `
 		SELECT
@@ -288,8 +309,11 @@ func (r *metricRepository) FindSeriesByIdentity(
 			msr.node_name,
 			msr.namespace,
 			msr.pod_name,
+			msr.pod_uid,
 			msr.container_name,
-			msr.labels_hash,
+			msr.controller_uid,
+			msr.controller_kind,
+			msr.controller_name,
 			msr.created_at,
 			msr.updated_at
 		FROM metric_series msr
@@ -302,7 +326,11 @@ func (r *metricRepository) FindSeriesByIdentity(
 		  AND msr.node_name IS NOT DISTINCT FROM $5
 		  AND msr.namespace IS NOT DISTINCT FROM $6
 		  AND msr.pod_name IS NOT DISTINCT FROM $7
-		  AND msr.container_name IS NOT DISTINCT FROM $8
+		  AND msr.pod_uid IS NOT DISTINCT FROM $8
+		  AND msr.container_name IS NOT DISTINCT FROM $9
+		  AND msr.controller_uid IS NOT DISTINCT FROM $10
+		  AND msr.controller_kind IS NOT DISTINCT FROM $11
+		  AND msr.controller_name IS NOT DISTINCT FROM $12
 		ORDER BY msr.updated_at DESC
 		LIMIT 1
 	`
@@ -318,7 +346,11 @@ func (r *metricRepository) FindSeriesByIdentity(
 		nodeName,
 		namespace,
 		podName,
+		podUID,
 		containerName,
+		controllerUID,
+		controllerKind,
+		controllerName,
 	).Scan(
 		&series.ID,
 		&series.AgentID,
@@ -329,8 +361,11 @@ func (r *metricRepository) FindSeriesByIdentity(
 		&series.NodeName,
 		&series.Namespace,
 		&series.PodName,
+		&series.PodUID,
 		&series.ContainerName,
-		&series.LabelsHash,
+		&series.ControllerUID,
+		&series.ControllerKind,
+		&series.ControllerName,
 		&series.CreatedAt,
 		&series.UpdatedAt,
 	)
@@ -361,8 +396,11 @@ func (r *metricRepository) GetSeriesByIDForOwner(
 			msr.node_name,
 			msr.namespace,
 			msr.pod_name,
+			msr.pod_uid,
 			msr.container_name,
-			msr.labels_hash,
+			msr.controller_uid,
+			msr.controller_kind,
+			msr.controller_name,
 			msr.created_at,
 			msr.updated_at
 		FROM metric_series msr
@@ -385,8 +423,11 @@ func (r *metricRepository) GetSeriesByIDForOwner(
 		&series.NodeName,
 		&series.Namespace,
 		&series.PodName,
+		&series.PodUID,
 		&series.ContainerName,
-		&series.LabelsHash,
+		&series.ControllerUID,
+		&series.ControllerKind,
+		&series.ControllerName,
 		&series.CreatedAt,
 		&series.UpdatedAt,
 	)

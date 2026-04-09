@@ -33,7 +33,7 @@ func (h *InventoryHandler) IngestInventory(w http.ResponseWriter, r *http.Reques
 	}
 
 	var req model.PushInventoryRequest
-	if err := decodeJSON(w, r, &req); err != nil {
+	if err := decodeAgentJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}

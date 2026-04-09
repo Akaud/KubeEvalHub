@@ -8,12 +8,18 @@ type ForecastRequest struct {
 	Steps        int    `json:"steps"`
 	HistoryLimit int    `json:"historyLimit"`
 
-	MetricName    string  `json:"metricName,omitempty"`
-	ResourceKind  string  `json:"resourceKind,omitempty"`
+	MetricName   string `json:"metricName,omitempty"`
+	ResourceKind string `json:"resourceKind,omitempty"`
+
 	NodeName      *string `json:"nodeName,omitempty"`
 	Namespace     *string `json:"namespace,omitempty"`
 	PodName       *string `json:"podName,omitempty"`
+	PodUID        *string `json:"podUid,omitempty"`
 	ContainerName *string `json:"containerName,omitempty"`
+
+	ControllerUID  *string `json:"controllerUid,omitempty"`
+	ControllerKind *string `json:"controllerKind,omitempty"`
+	ControllerName *string `json:"controllerName,omitempty"`
 }
 
 type ForecastPoint struct {
