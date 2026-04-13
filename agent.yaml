@@ -64,7 +64,7 @@ spec:
                   name: kubeevalhub-agent-secret
                   key: AGENT_TOKEN
             - name: SCRAPE_INTERVAL
-              value: "15s"
+              value: "30s"
           resources:
             requests:
               cpu: "50m"

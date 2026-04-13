@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"log"
 	"math"
 	"sort"
 	"strings"
@@ -180,31 +181,38 @@ func (s *analysisService) GetOverProvisionedWorkloads(
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("GetOverProvisionedWorkloads metrics rows=%d", len(rows))
 
 	usageGrouped := groupUsageRows(rows)
+	log.Printf("GetOverProvisionedWorkloads usageGrouped=%d", len(usageGrouped))
 
 	snapshot, err := s.inventoryRepo.GetLatestSnapshotForOwner(ctx, ownerID, agentID)
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("GetOverProvisionedWorkloads snapshotID=%s", snapshot.ID)
 
 	pods, err := s.inventoryRepo.GetPodsBySnapshotID(ctx, snapshot.ID)
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("GetOverProvisionedWorkloads pods=%d", len(pods))
 
 	containers, err := s.inventoryRepo.GetContainersBySnapshotID(ctx, snapshot.ID)
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("GetOverProvisionedWorkloads containers=%d", len(containers))
 
 	requestsGrouped := groupWorkloadRequests(pods, containers)
+	log.Printf("GetOverProvisionedWorkloads requestsGrouped=%d", len(requestsGrouped))
 
 	items := make([]model.OverProvisionFinding, 0)
 
 	for key, usage := range usageGrouped {
 		requests, ok := requestsGrouped[key]
 		if !ok {
+			log.Printf("GetOverProvisionedWorkloads skip key=%s reason=no matching requests", key)
 			continue
 		}
 
@@ -212,6 +220,7 @@ func (s *analysisService) GetOverProvisionedWorkloads(
 		memStats := buildResourceStats(usage.memoryValues, usage.memoryUnit)
 
 		if cpuStats == nil && memStats == nil {
+			log.Printf("GetOverProvisionedWorkloads skip key=%s reason=no cpu or memory stats", key)
 			continue
 		}
 
@@ -237,6 +246,16 @@ func (s *analysisService) GetOverProvisionedWorkloads(
 				finding.ReclaimableCPUCores >= thresholds.MinReclaimCPUCores {
 				finding.CPUOverProvisioned = true
 			}
+
+			log.Printf(
+				"GetOverProvisionedWorkloads cpu key=%s current=%.4f p95=%.4f recommended=%.4f reclaimable=%.4f over=%t",
+				key,
+				finding.CurrentCPURequestCores,
+				finding.ObservedCPUP95Cores,
+				finding.RecommendedCPURequestCores,
+				finding.ReclaimableCPUCores,
+				finding.CPUOverProvisioned,
+			)
 		}
 
 		if memStats != nil {
@@ -252,10 +271,34 @@ func (s *analysisService) GetOverProvisionedWorkloads(
 				finding.ReclaimableMemoryBytes >= thresholds.MinReclaimMemoryBytes {
 				finding.MemoryOverProvisioned = true
 			}
+
+			log.Printf(
+				"GetOverProvisionedWorkloads mem key=%s current=%d p95=%d recommended=%d reclaimable=%d over=%t",
+				key,
+				finding.CurrentMemoryRequestBytes,
+				finding.ObservedMemoryP95Bytes,
+				finding.RecommendedMemoryRequestBytes,
+				finding.ReclaimableMemoryBytes,
+				finding.MemoryOverProvisioned,
+			)
 		}
 
 		if finding.CPUOverProvisioned || finding.MemoryOverProvisioned {
+			log.Printf(
+				"GetOverProvisionedWorkloads add key=%s namespace=%s kind=%s name=%s",
+				key,
+				finding.Namespace,
+				finding.ControllerKind,
+				finding.ControllerName,
+			)
 			items = append(items, finding)
+		} else {
+			log.Printf(
+				"GetOverProvisionedWorkloads skip key=%s reason=below thresholds cpuOver=%t memOver=%t",
+				key,
+				finding.CPUOverProvisioned,
+				finding.MemoryOverProvisioned,
+			)
 		}
 	}
 
@@ -268,6 +311,8 @@ func (s *analysisService) GetOverProvisionedWorkloads(
 		}
 		return items[i].Namespace < items[j].Namespace
 	})
+
+	log.Printf("GetOverProvisionedWorkloads final items=%d", len(items))
 
 	return &model.OverProvisionResponse{
 		ClusterID:  agentID,
@@ -520,30 +565,40 @@ func (s *analysisService) GetUnderProvisionedWorkloads(
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("GetUnderProvisionedWorkloads metrics rows=%d", len(rows))
+
 	usageGrouped := groupUsageRows(rows)
+	log.Printf("GetUnderProvisionedWorkloads usageGrouped=%d", len(usageGrouped))
 
 	snapshot, err := s.inventoryRepo.GetLatestSnapshotForOwner(ctx, ownerID, agentID)
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("GetUnderProvisionedWorkloads snapshotID=%s", snapshot.ID)
 
 	pods, err := s.inventoryRepo.GetPodsBySnapshotID(ctx, snapshot.ID)
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("GetUnderProvisionedWorkloads pods=%d", len(pods))
 
 	containers, err := s.inventoryRepo.GetContainersBySnapshotID(ctx, snapshot.ID)
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("GetUnderProvisionedWorkloads containers=%d", len(containers))
 
 	containerStatuses, err := s.inventoryRepo.GetContainerStatusesBySnapshotID(ctx, snapshot.ID)
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("GetUnderProvisionedWorkloads containerStatuses=%d", len(containerStatuses))
 
 	limitsGrouped := groupWorkloadLimits(pods, containers)
 	runtimeGrouped := groupWorkloadRuntimeSignals(pods, containerStatuses)
+
+	log.Printf("GetUnderProvisionedWorkloads limitsGrouped=%d", len(limitsGrouped))
+	log.Printf("GetUnderProvisionedWorkloads runtimeGrouped=%d", len(runtimeGrouped))
 
 	items := make([]model.UnderProvisionFinding, 0)
 
@@ -552,6 +607,7 @@ func (s *analysisService) GetUnderProvisionedWorkloads(
 		runtimeSignals, hasRuntimeSignals := runtimeGrouped[key]
 
 		if !hasLimits && !hasRuntimeSignals {
+			log.Printf("GetUnderProvisionedWorkloads skip key=%s reason=no limits and no runtime signals", key)
 			continue
 		}
 
@@ -602,6 +658,17 @@ func (s *analysisService) GetUnderProvisionedWorkloads(
 					}
 				}
 			}
+
+			log.Printf(
+				"GetUnderProvisionedWorkloads pressure key=%s cpuLimit=%.4f cpuFreq=%.4f memLimit=%d memFreq=%.4f cpuUnder=%t memUnder=%t",
+				key,
+				finding.CurrentCPULimitCores,
+				finding.CPUPressureFrequency,
+				finding.CurrentMemoryLimitBytes,
+				finding.MemoryPressureFrequency,
+				finding.CPUUnderProvisioned,
+				finding.MemoryUnderProvisioned,
+			)
 		}
 
 		if hasRuntimeSignals {
@@ -612,6 +679,14 @@ func (s *analysisService) GetUnderProvisionedWorkloads(
 			if runtimeSignals.memoryOOMDetected {
 				finding.MemoryUnderProvisioned = true
 			}
+
+			log.Printf(
+				"GetUnderProvisionedWorkloads runtime key=%s oom=%t oomContainers=%d restarts=%d",
+				key,
+				finding.MemoryOOMDetected,
+				finding.OOMContainerCount,
+				finding.RestartCount,
+			)
 		}
 
 		if finding.MemoryOOMDetected {
@@ -625,7 +700,17 @@ func (s *analysisService) GetUnderProvisionedWorkloads(
 		}
 
 		if finding.CPUUnderProvisioned || finding.MemoryUnderProvisioned {
+			log.Printf(
+				"GetUnderProvisionedWorkloads add key=%s namespace=%s kind=%s name=%s reason=%s",
+				key,
+				finding.Namespace,
+				finding.ControllerKind,
+				finding.ControllerName,
+				finding.Reason,
+			)
 			items = append(items, finding)
+		} else {
+			log.Printf("GetUnderProvisionedWorkloads skip key=%s reason=below thresholds", key)
 		}
 	}
 
@@ -638,6 +723,8 @@ func (s *analysisService) GetUnderProvisionedWorkloads(
 		}
 		return items[i].Namespace < items[j].Namespace
 	})
+
+	log.Printf("GetUnderProvisionedWorkloads final items=%d", len(items))
 
 	return &model.UnderProvisionResponse{
 		ClusterID:  agentID,

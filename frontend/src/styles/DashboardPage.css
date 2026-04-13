@@ -14,7 +14,7 @@
   padding: 28px 20px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
   box-sizing: border-box;
 }
@@ -360,7 +360,7 @@ body.theme-dark {
 
 .create-agent-button,
 .primary-button {
-  background: #2563eb;
+  background: #166534;
   color: #fff;
   padding: 10px 16px;
 }
@@ -1333,4 +1333,61 @@ body.theme-dark {
   .cell-truncate {
     max-width: 180px;
   }
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 28px;
+  margin-top: 32px;
+  flex: 1;
+}
+
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.sidebar-section-title {
+  margin: 0 0 6px;
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #9ca3af;
+}
+
+.sidebar-item {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.sidebar-logout {
+  width: 100%;
+  margin-top: 32px;
+  justify-content: flex-start;
+}
+
+.dashboard-layout-dark .sidebar-section-title {
+  color: #6b7280;
+}
+
+@media (max-width: 600px) {
+  .sidebar-nav {
+    gap: 22px;
+  }
+
+  .sidebar-section-title {
+    font-size: 11px;
+  }
+}
+
+.settings-grid {
+  display: grid;
+  gap: 20px;
 }

@@ -27,43 +27,10 @@ func NewUserRepository(pool *pgxpool.Pool) *UserRepository {
 	}
 }
 
-func (r *UserRepository) Create(ctx context.Context, name, email, password string) (*model.User, error) {
-	const query = `
-		INSERT INTO users (name, email, password)
-		VALUES ($1, $2, $3)
-		RETURNING id, name, email, password, created_at, updated_at
-	`
-
+func scanUser(row pgx.Row) (*model.User, error) {
 	var user model.User
 
-	err := r.pool.QueryRow(ctx, query, name, email, password).Scan(
-		&user.ID,
-		&user.Name,
-		&user.Email,
-		&user.Password,
-		&user.CreatedAt,
-		&user.UpdatedAt,
-	)
-	if err != nil {
-		if isUniqueViolation(err) {
-			return nil, ErrEmailAlreadyExists
-		}
-		return nil, fmt.Errorf("create user: %w", err)
-	}
-
-	return &user, nil
-}
-
-func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*model.User, error) {
-	const query = `
-		SELECT id, name, email, password, created_at, updated_at
-		FROM users
-		WHERE email = $1
-	`
-
-	var user model.User
-
-	err := r.pool.QueryRow(ctx, query, email).Scan(
+	err := row.Scan(
 		&user.ID,
 		&user.Name,
 		&user.Email,
@@ -75,10 +42,85 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*model.U
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrUserNotFound
 		}
-		return nil, fmt.Errorf("get user by email: %w", err)
+		return nil, err
 	}
 
 	return &user, nil
+}
+
+func (r *UserRepository) Create(ctx context.Context, name, email, password string) (*model.User, error) {
+	const query = `
+		INSERT INTO users (name, email, password)
+		VALUES ($1, $2, $3)
+		RETURNING id, name, email, password, created_at, updated_at
+	`
+
+	user, err := scanUser(r.pool.QueryRow(ctx, query, name, email, password))
+	if err != nil {
+		if isUniqueViolation(err) {
+			return nil, ErrEmailAlreadyExists
+		}
+		if errors.Is(err, ErrUserNotFound) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("create user: %w", err)
+	}
+
+	return user, nil
+}
+
+func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*model.User, error) {
+	const query = `
+		SELECT id, name, email, password, created_at, updated_at
+		FROM users
+		WHERE email = $1
+	`
+
+	user, err := scanUser(r.pool.QueryRow(ctx, query, email))
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("get user by email: %w", err)
+	}
+
+	return user, nil
+}
+
+func (r *UserRepository) GetByName(ctx context.Context, name string) (*model.User, error) {
+	const query = `
+		SELECT id, name, email, password, created_at, updated_at
+		FROM users
+		WHERE name = $1
+	`
+
+	user, err := scanUser(r.pool.QueryRow(ctx, query, name))
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("get user by name: %w", err)
+	}
+
+	return user, nil
+}
+
+func (r *UserRepository) GetByID(ctx context.Context, id int64) (*model.User, error) {
+	const query = `
+		SELECT id, name, email, password, created_at, updated_at
+		FROM users
+		WHERE id = $1
+	`
+
+	user, err := scanUser(r.pool.QueryRow(ctx, query, id))
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("get user by id: %w", err)
+	}
+
+	return user, nil
 }
 
 func (r *UserRepository) Update(ctx context.Context, id int64, name, email, password string) (*model.User, error) {
@@ -92,18 +134,9 @@ func (r *UserRepository) Update(ctx context.Context, id int64, name, email, pass
 		RETURNING id, name, email, password, created_at, updated_at
 	`
 
-	var user model.User
-
-	err := r.pool.QueryRow(ctx, query, id, name, email, password).Scan(
-		&user.ID,
-		&user.Name,
-		&user.Email,
-		&user.Password,
-		&user.CreatedAt,
-		&user.UpdatedAt,
-	)
+	user, err := scanUser(r.pool.QueryRow(ctx, query, id, name, email, password))
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, ErrUserNotFound) {
 			return nil, ErrUserNotFound
 		}
 		if isUniqueViolation(err) {
@@ -112,7 +145,7 @@ func (r *UserRepository) Update(ctx context.Context, id int64, name, email, pass
 		return nil, fmt.Errorf("update user: %w", err)
 	}
 
-	return &user, nil
+	return user, nil
 }
 
 func (r *UserRepository) Patch(ctx context.Context, id int64, name, email, password *string) (*model.User, error) {
@@ -126,18 +159,9 @@ func (r *UserRepository) Patch(ctx context.Context, id int64, name, email, passw
 		RETURNING id, name, email, password, created_at, updated_at
 	`
 
-	var user model.User
-
-	err := r.pool.QueryRow(ctx, query, id, name, email, password).Scan(
-		&user.ID,
-		&user.Name,
-		&user.Email,
-		&user.Password,
-		&user.CreatedAt,
-		&user.UpdatedAt,
-	)
+	user, err := scanUser(r.pool.QueryRow(ctx, query, id, name, email, password))
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, ErrUserNotFound) {
 			return nil, ErrUserNotFound
 		}
 		if isUniqueViolation(err) {
@@ -146,7 +170,7 @@ func (r *UserRepository) Patch(ctx context.Context, id int64, name, email, passw
 		return nil, fmt.Errorf("patch user: %w", err)
 	}
 
-	return &user, nil
+	return user, nil
 }
 
 func (r *UserRepository) Delete(ctx context.Context, id int64) error {
@@ -170,58 +194,4 @@ func isUniqueViolation(err error) bool {
 		return pgErr.Code == "23505"
 	}
 	return false
-}
-
-func (r *UserRepository) GetByName(ctx context.Context, name string) (*model.User, error) {
-	const query = `
-		SELECT id, name, email, password, created_at, updated_at
-		FROM users
-		WHERE name = $1
-	`
-
-	var user model.User
-
-	err := r.pool.QueryRow(ctx, query, name).Scan(
-		&user.ID,
-		&user.Name,
-		&user.Email,
-		&user.Password,
-		&user.CreatedAt,
-		&user.UpdatedAt,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrUserNotFound
-		}
-		return nil, fmt.Errorf("get user by name: %w", err)
-	}
-
-	return &user, nil
-}
-
-func (r *UserRepository) GetByID(ctx context.Context, id int64) (*model.User, error) {
-	const query = `
-		SELECT id, name, email, password, created_at, updated_at
-		FROM users
-		WHERE id = $1
-	`
-
-	var user model.User
-
-	err := r.pool.QueryRow(ctx, query, id).Scan(
-		&user.ID,
-		&user.Name,
-		&user.Email,
-		&user.Password,
-		&user.CreatedAt,
-		&user.UpdatedAt,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrUserNotFound
-		}
-		return nil, fmt.Errorf("get user by id: %w", err)
-	}
-
-	return &user, nil
 }

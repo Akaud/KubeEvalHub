@@ -7,8 +7,6 @@ import (
 	"time"
 )
 
-// Config holds all runtime configuration.
-// Single source of truth for environment-derived values.
 type Config struct {
 	Port         string
 	ReadTimeout  time.Duration
@@ -24,7 +22,6 @@ type Config struct {
 	JWTSecret  string
 }
 
-// Load reads environment variables and validates them.
 func Load() *Config {
 	cfg := &Config{
 		Port:         mustGetEnv("PORT"),
@@ -35,12 +32,11 @@ func Load() *Config {
 		DBHost:     mustGetEnv("DB_HOST"),
 		DBPort:     mustGetEnv("DB_PORT"),
 		DBUser:     mustGetEnv("DB_USER"),
-		DBPassword: os.Getenv("DB_PASSWORD"), // optional
+		DBPassword: os.Getenv("DB_PASSWORD"),
 		DBName:     mustGetEnv("DB_NAME"),
 		DBSSLMode:  mustGetEnv("DB_SSLMODE"),
 		JWTSecret:  mustGetEnv("JWT_SECRET"),
 	}
-
 	return cfg
 }
 
@@ -52,7 +48,6 @@ func mustGetEnv(key string) string {
 	return v
 }
 
-// Supports values like: "5" (seconds) or "5s"
 func mustGetDuration(key string) time.Duration {
 	v := os.Getenv(key)
 	if v == "" {

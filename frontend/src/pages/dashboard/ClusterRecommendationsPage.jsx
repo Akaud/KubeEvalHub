@@ -56,15 +56,45 @@ function buildQuery(params) {
   return search.toString()
 }
 
+function clampFromToLast24Hours(fromValue, toValue) {
+  if (!fromValue || !toValue) return fromValue
+
+  const fromDate = new Date(fromValue)
+  const toDate = new Date(toValue)
+
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    return fromValue
+  }
+
+  const minFrom = new Date(toDate)
+  minFrom.setHours(minFrom.getHours() - 24)
+
+  if (fromDate < minFrom) {
+    return formatDateTimeInput(minFrom)
+  }
+
+  return fromValue
+}
+
+async function readJsonSafely(res) {
+  const text = await res.text()
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new Error(`Expected JSON but got: ${text.slice(0, 200)}`)
+  }
+}
+
 export default function ClusterRecommendationsPage() {
-  const { id } = useParams()
+  const { agentId } = useParams()
   const navigate = useNavigate()
   const { isAuthenticated, isReady } = useAuth()
 
   const defaultTo = useMemo(() => new Date(), [])
   const defaultFrom = useMemo(() => {
     const d = new Date()
-    d.setDate(d.getDate() - 7)
+    d.setHours(d.getHours() - 24)
     return d
   }, [])
 
@@ -80,7 +110,7 @@ export default function ClusterRecommendationsPage() {
   const [error, setError] = useState('')
 
   const loadData = async () => {
-    if (!isAuthenticated || !id) return
+    if (!isAuthenticated || !agentId) return
 
     setIsLoading(true)
     setError('')
@@ -91,47 +121,51 @@ export default function ClusterRecommendationsPage() {
         to: toRFC3339Local(to),
       })
 
-      const [
-        recommendationsRes,
-        overProvisionedRes,
-        underProvisionedRes,
-        capacityRes,
-      ] = await Promise.all([
-        apiFetch(`/api/clusters/${id}/recommendations?${query}`),
-        apiFetch(`/api/clusters/${id}/analysis/overprovisioned?${query}`),
-        apiFetch(`/api/clusters/${id}/analysis/underprovisioned?${query}`),
-        apiFetch(`/api/clusters/${id}/capacity?${query}`),
-      ])
+      const requests = [
+        {
+          url: `/api/clusters/${agentId}/recommendations?${query}`,
+          setter: setRecommendations,
+          errorMessage: 'Failed to load recommendations',
+        },
+        {
+          url: `/api/clusters/${agentId}/analysis/overprovisioned?${query}`,
+          setter: setOverProvisioned,
+          errorMessage: 'Failed to load over-provisioned workloads',
+        },
+        {
+          url: `/api/clusters/${agentId}/analysis/underprovisioned?${query}`,
+          setter: setUnderProvisioned,
+          errorMessage: 'Failed to load under-provisioned workloads',
+        },
+        {
+          url: `/api/clusters/${agentId}/capacity?${query}`,
+          setter: setCapacity,
+          errorMessage: 'Failed to load capacity',
+        },
+      ]
 
-      const [
-        recommendationsData,
-        overProvisionedData,
-        underProvisionedData,
-        capacityData,
-      ] = await Promise.all([
-        recommendationsRes.json().catch(() => null),
-        overProvisionedRes.json().catch(() => null),
-        underProvisionedRes.json().catch(() => null),
-        capacityRes.json().catch(() => null),
-      ])
+      const results = await Promise.allSettled(
+        requests.map(async ({ url, setter, errorMessage }) => {
+          const res = await apiFetch(url)
+          const data = await readJsonSafely(res)
 
-      if (!recommendationsRes.ok) {
-        throw new Error(recommendationsData?.error || 'Failed to load recommendations')
-      }
-      if (!overProvisionedRes.ok) {
-        throw new Error(overProvisionedData?.error || 'Failed to load over-provisioned workloads')
-      }
-      if (!underProvisionedRes.ok) {
-        throw new Error(underProvisionedData?.error || 'Failed to load under-provisioned workloads')
-      }
-      if (!capacityRes.ok) {
-        throw new Error(capacityData?.error || 'Failed to load capacity')
-      }
+          if (!res.ok) {
+            throw new Error(data?.error || errorMessage)
+          }
 
-      setRecommendations(recommendationsData)
-      setOverProvisioned(overProvisionedData)
-      setUnderProvisioned(underProvisionedData)
-      setCapacity(capacityData)
+          setter(data)
+          return data
+        })
+      )
+
+      const failures = results
+        .filter((result) => result.status === 'rejected')
+        .map((result) => result.reason?.message)
+        .filter(Boolean)
+
+      if (failures.length > 0) {
+        setError(failures[0])
+      }
     } catch (err) {
       setError(err.message || 'Failed to load recommendations data')
     } finally {
@@ -141,37 +175,47 @@ export default function ClusterRecommendationsPage() {
 
   useEffect(() => {
     if (!isReady || !isAuthenticated) return
-
     loadData()
     const intervalId = setInterval(loadData, 30000)
 
     return () => clearInterval(intervalId)
-  }, [isReady, isAuthenticated, id, from, to])
+  }, [isReady, isAuthenticated, agentId, from, to])
 
-  const recommendationItems =
-    recommendations?.items ||
-    recommendations?.recommendations ||
-    recommendations?.workloads ||
-    []
+  const recommendationItems = Array.isArray(recommendations)
+    ? recommendations
+    : recommendations?.items ||
+      recommendations?.recommendations ||
+      recommendations?.workloads ||
+      []
 
-  const overProvisionedItems =
-    overProvisioned?.items ||
-    overProvisioned?.workloads ||
-    overProvisioned ||
-    []
+  const overProvisionedItems = Array.isArray(overProvisioned)
+    ? overProvisioned
+    : overProvisioned?.items ||
+      overProvisioned?.workloads ||
+      overProvisioned?.overProvisioned ||
+      []
 
-  const underProvisionedItems =
-    underProvisioned?.items ||
-    underProvisioned?.workloads ||
-    underProvisioned ||
-    []
+  const underProvisionedItems = Array.isArray(underProvisioned)
+    ? underProvisioned
+    : underProvisioned?.items ||
+      underProvisioned?.workloads ||
+      underProvisioned?.underProvisioned ||
+      []
+
+  const maxToInput = formatDateTimeInput(new Date())
+
+  const minFromInput = useMemo(() => {
+    const d = new Date(to || new Date())
+    d.setHours(d.getHours() - 24)
+    return formatDateTimeInput(d)
+  }, [to])
 
   return (
     <>
       <div className="dashboard-header">
         <div>
           <h1>Cluster recommendations</h1>
-          <p>Right-sizing, pressure, and capacity signals for cluster {id}.</p>
+          <p>Right-sizing, pressure, and capacity signals for cluster {agentId}.</p>
         </div>
 
         <div className="cluster-actions">
@@ -195,7 +239,12 @@ export default function ClusterRecommendationsPage() {
               <input
                 type="datetime-local"
                 value={from}
-                onChange={(e) => setFrom(e.target.value)}
+                min={minFromInput}
+                max={to}
+                onChange={(e) => {
+                  const nextFrom = clampFromToLast24Hours(e.target.value, to)
+                  setFrom(nextFrom)
+                }}
               />
             </label>
 
@@ -204,7 +253,12 @@ export default function ClusterRecommendationsPage() {
               <input
                 type="datetime-local"
                 value={to}
-                onChange={(e) => setTo(e.target.value)}
+                max={maxToInput}
+                onChange={(e) => {
+                  const nextTo = e.target.value
+                  setTo(nextTo)
+                  setFrom((currentFrom) => clampFromToLast24Hours(currentFrom, nextTo))
+                }}
               />
             </label>
           </div>
@@ -237,20 +291,18 @@ export default function ClusterRecommendationsPage() {
               <div className="agent-list-item">
                 <div className="agent-list-main">
                   <h4>CPU</h4>
-                  <p>Total: {formatNumber(capacity.totalCpuCores ?? capacity.cpuTotalCores)}</p>
-                  <p>Requested: {formatNumber(capacity.requestedCpuCores ?? capacity.cpuRequestedCores)}</p>
-                  <p>Recommended: {formatNumber(capacity.recommendedCpuCores ?? capacity.cpuRecommendedCores)}</p>
-                  <p>Headroom: {formatNumber(capacity.cpuHeadroomCores ?? capacity.availableCpuCores)}</p>
+                  <p>Requested: {formatNumber(capacity.totalCpuRequestCores)}</p>
+                  <p>Reclaimable: {formatNumber(capacity.reclaimableCpuCores ?? capacity.reclaimableCPUCores)}</p>
+                  <p>Eligible workloads: {capacity.eligibleWorkloads ?? '—'}</p>
+                  <p>Total workloads: {capacity.totalWorkloads ?? '—'}</p>
                 </div>
               </div>
 
               <div className="agent-list-item">
                 <div className="agent-list-main">
                   <h4>Memory</h4>
-                  <p>Total: {formatBytes(capacity.totalMemoryBytes ?? capacity.memoryTotalBytes)}</p>
-                  <p>Requested: {formatBytes(capacity.requestedMemoryBytes ?? capacity.memoryRequestedBytes)}</p>
-                  <p>Recommended: {formatBytes(capacity.recommendedMemoryBytes ?? capacity.memoryRecommendedBytes)}</p>
-                  <p>Headroom: {formatBytes(capacity.memoryHeadroomBytes ?? capacity.availableMemoryBytes)}</p>
+                  <p>Requested: {formatBytes(capacity.totalMemoryRequestBytes)}</p>
+                  <p>Reclaimable: {formatBytes(capacity.reclaimableMemoryBytes)}</p>
                 </div>
               </div>
             </div>
@@ -262,7 +314,7 @@ export default function ClusterRecommendationsPage() {
         <div className="dashboard-card">
           <h3>Right-sizing recommendations</h3>
 
-          {isLoading && !recommendationItems.length ? (
+          {isLoading && recommendations === null ? (
             <p>Loading recommendations...</p>
           ) : recommendationItems.length === 0 ? (
             <p>No right-sizing recommendations found for the selected period.</p>
@@ -272,19 +324,21 @@ export default function ClusterRecommendationsPage() {
                 const key =
                   item.workloadUid ||
                   item.workloadName ||
+                  item.controllerUID ||
+                  item.controllerName ||
                   item.name ||
                   `${item.namespace || 'ns'}-${index}`
 
                 return (
                   <div key={key} className="agent-list-item">
                     <div className="agent-list-main">
-                      <h4>{item.workloadName || item.name || 'Unnamed workload'}</h4>
+                      <h4>{item.workloadName || item.controllerName || item.name || 'Unnamed workload'}</h4>
                       <p>Namespace: {item.namespace || '—'}</p>
-                      <p>Kind: {item.kind || '—'}</p>
+                      <p>Kind: {item.kind || item.controllerKind || '—'}</p>
                       <p>Replicas: {item.replicas ?? '—'}</p>
-                      <p>Current CPU request: {formatNumber(item.currentCpuRequestCores)}</p>
+                      <p>Current CPU request: {formatNumber(item.currentCpuRequestCores ?? item.cpuRequestCores)}</p>
                       <p>Recommended CPU request: {formatNumber(item.recommendedCpuRequestCores)}</p>
-                      <p>Current memory request: {formatBytes(item.currentMemoryRequestBytes)}</p>
+                      <p>Current memory request: {formatBytes(item.currentMemoryRequestBytes ?? item.memoryRequestBytes)}</p>
                       <p>Recommended memory request: {formatBytes(item.recommendedMemoryRequestBytes)}</p>
                     </div>
 
@@ -309,7 +363,7 @@ export default function ClusterRecommendationsPage() {
         <div className="dashboard-card">
           <h3>Over-provisioned workloads</h3>
 
-          {isLoading && !Array.isArray(overProvisionedItems) ? (
+          {isLoading && overProvisioned === null ? (
             <p>Loading over-provisioned workloads...</p>
           ) : !Array.isArray(overProvisionedItems) || overProvisionedItems.length === 0 ? (
             <p>No over-provisioned workloads detected.</p>
@@ -319,28 +373,46 @@ export default function ClusterRecommendationsPage() {
                 const key =
                   item.workloadUid ||
                   item.workloadName ||
+                  item.controllerUID ||
+                  item.controllerName ||
                   item.name ||
                   `over-${index}`
 
                 return (
                   <div key={key} className="agent-list-item">
                     <div className="agent-list-main">
-                      <h4>{item.workloadName || item.name || 'Unnamed workload'}</h4>
+                      <h4>{item.workloadName || item.controllerName || item.name || 'Unnamed workload'}</h4>
                       <p>Namespace: {item.namespace || '—'}</p>
-                      <p>Kind: {item.kind || '—'}</p>
-                      <p>CPU request: {formatNumber(item.cpuRequestCores)}</p>
-                      <p>CPU recommended: {formatNumber(item.recommendedCpuRequestCores)}</p>
-                      <p>Memory request: {formatBytes(item.memoryRequestBytes)}</p>
+                      <p>Kind: {item.kind || item.controllerKind || '—'}</p>
+                      <p>CPU request: {formatNumber(item.cpuRequestCores ?? item.currentCpuRequestCores)}</p>
+                      <p>CPU recommended: {formatNumber(item.recommendedCpuRequestCores ?? item.recommendedCPURequestCores)}</p>
+                      <p>CPU p95: {formatNumber(item.observedCpuP95Cores ?? item.observedCPUP95Cores)}</p>
+                      <p>Memory request: {formatBytes(item.memoryRequestBytes ?? item.currentMemoryRequestBytes)}</p>
                       <p>Memory recommended: {formatBytes(item.recommendedMemoryRequestBytes)}</p>
+                      <p>Memory p95: {formatBytes(item.observedMemoryP95Bytes)}</p>
                     </div>
 
                     <div className="agent-list-side">
-                      {item.reclaimCpuCores !== undefined && (
-                        <p>Reclaim CPU: {formatNumber(item.reclaimCpuCores)}</p>
+                      {(item.reclaimCpuCores !== undefined || item.reclaimableCpuCores !== undefined || item.reclaimableCPUCores !== undefined) && (
+                        <p>
+                          Reclaim CPU: {formatNumber(
+                            item.reclaimCpuCores ??
+                            item.reclaimableCpuCores ??
+                            item.reclaimableCPUCores
+                          )}
+                        </p>
                       )}
-                      {item.reclaimMemoryBytes !== undefined && (
-                        <p>Reclaim memory: {formatBytes(item.reclaimMemoryBytes)}</p>
+
+                      {(item.reclaimMemoryBytes !== undefined || item.reclaimableMemoryBytes !== undefined) && (
+                        <p>
+                          Reclaim memory: {formatBytes(
+                            item.reclaimMemoryBytes ??
+                            item.reclaimableMemoryBytes
+                          )}
+                        </p>
                       )}
+
+                      {item.reason && <p>{item.reason}</p>}
                     </div>
                   </div>
                 )
@@ -354,7 +426,7 @@ export default function ClusterRecommendationsPage() {
         <div className="dashboard-card">
           <h3>Under-provisioned workloads</h3>
 
-          {isLoading && !Array.isArray(underProvisionedItems) ? (
+          {isLoading && underProvisioned === null ? (
             <p>Loading under-provisioned workloads...</p>
           ) : !Array.isArray(underProvisionedItems) || underProvisionedItems.length === 0 ? (
             <p>No under-provisioned workloads detected.</p>
@@ -364,19 +436,21 @@ export default function ClusterRecommendationsPage() {
                 const key =
                   item.workloadUid ||
                   item.workloadName ||
+                  item.controllerUID ||
+                  item.controllerName ||
                   item.name ||
                   `under-${index}`
 
                 return (
                   <div key={key} className="agent-list-item">
                     <div className="agent-list-main">
-                      <h4>{item.workloadName || item.name || 'Unnamed workload'}</h4>
+                      <h4>{item.workloadName || item.controllerName || item.name || 'Unnamed workload'}</h4>
                       <p>Namespace: {item.namespace || '—'}</p>
-                      <p>Kind: {item.kind || '—'}</p>
+                      <p>Kind: {item.kind || item.controllerKind || '—'}</p>
                       <p>CPU pressure frequency: {formatNumber(item.cpuPressureFrequency, 3)}</p>
                       <p>Memory pressure frequency: {formatNumber(item.memoryPressureFrequency, 3)}</p>
-                      <p>Peak CPU usage: {formatNumber(item.peakCpuUsageCores)}</p>
-                      <p>Peak memory usage: {formatBytes(item.peakMemoryUsageBytes)}</p>
+                      <p>Peak CPU usage: {formatNumber(item.peakCpuUsageCores ?? item.observedCpuP95Cores ?? item.observedCPUP95Cores)}</p>
+                      <p>Peak memory usage: {formatBytes(item.peakMemoryUsageBytes ?? item.observedMemoryP95Bytes)}</p>
                     </div>
 
                     <div className="agent-list-side">

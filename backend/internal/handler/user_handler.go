@@ -4,7 +4,9 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
+	"backend/internal/model"
 	"backend/internal/service"
 
 	"github.com/go-chi/chi/v5"
@@ -43,6 +45,24 @@ type refreshResponse struct {
 
 type logoutRequest struct {
 	RefreshToken string `json:"refreshToken"`
+}
+
+type userResponse struct {
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	Email     string    `json:"email"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func toUserResponse(user *model.User) userResponse {
+	return userResponse{
+		ID:        user.ID,
+		Name:      user.Name,
+		Email:     user.Email,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+	}
 }
 
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
@@ -119,11 +139,11 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Location", "/users/"+strconv.FormatInt(user.ID, 10))
 	writeJSON(w, http.StatusCreated, struct {
-		User         any    `json:"user"`
-		AccessToken  string `json:"accessToken"`
-		RefreshToken string `json:"refreshToken"`
+		User         userResponse `json:"user"`
+		AccessToken  string       `json:"accessToken"`
+		RefreshToken string       `json:"refreshToken"`
 	}{
-		User:         user,
+		User:         toUserResponse(user),
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 	})
@@ -170,7 +190,7 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, user)
+	writeJSON(w, http.StatusOK, toUserResponse(user))
 }
 
 func (h *Handler) PatchUser(w http.ResponseWriter, r *http.Request) {
@@ -206,7 +226,7 @@ func (h *Handler) PatchUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, user)
+	writeJSON(w, http.StatusOK, toUserResponse(user))
 }
 
 func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
@@ -274,5 +294,5 @@ func (h *Handler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, user)
+	writeJSON(w, http.StatusOK, toUserResponse(user))
 }

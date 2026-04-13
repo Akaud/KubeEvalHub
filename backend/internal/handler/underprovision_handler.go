@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"log"
 	"net/http"
+	"time"
 
 	"backend/internal/service"
 )
@@ -19,15 +21,26 @@ func NewUnderProvisionHandler(analysisService service.AnalysisService) *UnderPro
 func (h *UnderProvisionHandler) GetUnderProvisionedWorkloads(w http.ResponseWriter, r *http.Request) {
 	req, err := parseAnalysisRequestContext(r)
 	if err != nil {
+		log.Printf("GetUnderProvisionedWorkloads parseAnalysisRequestContext error: %v", err)
 		writeAnalysisHandlerError(w, err, "failed to detect under-provisioned workloads")
 		return
 	}
 
 	thresholds, err := parseUnderProvisionThresholds(r)
 	if err != nil {
+		log.Printf("GetUnderProvisionedWorkloads parseUnderProvisionThresholds error: %v", err)
 		writeAnalysisHandlerError(w, err, "failed to detect under-provisioned workloads")
 		return
 	}
+
+	log.Printf(
+		"GetUnderProvisionedWorkloads owner=%d cluster=%s from=%s to=%s thresholds=%+v",
+		req.OwnerID,
+		req.ClusterID,
+		req.From.Format(time.RFC3339),
+		req.To.Format(time.RFC3339),
+		thresholds,
+	)
 
 	resp, err := h.analysisService.GetUnderProvisionedWorkloads(
 		r.Context(),
@@ -38,9 +51,11 @@ func (h *UnderProvisionHandler) GetUnderProvisionedWorkloads(w http.ResponseWrit
 		thresholds,
 	)
 	if err != nil {
+		log.Printf("GetUnderProvisionedWorkloads service error: %v", err)
 		writeAnalysisHandlerError(w, err, "failed to detect under-provisioned workloads")
 		return
 	}
 
+	log.Printf("GetUnderProvisionedWorkloads response: %+v", resp)
 	writeJSON(w, http.StatusOK, resp)
 }

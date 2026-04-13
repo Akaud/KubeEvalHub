@@ -56,13 +56,11 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	// public routes
 	r.Post("/auth/login", userHandler.Login)
 	r.Post("/auth/refresh", userHandler.RefreshToken)
 	r.Post("/auth/logout", userHandler.Logout)
 
 	r.Route("/users", func(r chi.Router) {
-		// registration must stay public
 		r.Post("/", userHandler.CreateUser)
 
 		r.Group(func(r chi.Router) {
@@ -75,7 +73,6 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 		})
 	})
 
-	// authenticated owner routes
 	r.Route("/agents", func(r chi.Router) {
 		r.Use(jwtAuthMiddleware)
 
@@ -86,7 +83,6 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 		r.Delete("/{id}", agentHandler.DeleteAgent)
 	})
 
-	// agent-authenticated routes
 	r.Route("/agent", func(r chi.Router) {
 		r.Use(handler.AgentAuthMiddleware(agentService))
 		r.Post("/heartbeat", agentHandler.Heartbeat)

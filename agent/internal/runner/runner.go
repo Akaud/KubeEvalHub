@@ -25,9 +25,10 @@ type Runner struct {
 	lastInventoryHash string
 	lastInventorySent time.Time
 
-	metricsRunning   int32
-	inventoryRunning int32
-	heartbeatRunning int32
+	metricsRunning             int32
+	inventoryRunning           int32
+	heartbeatRunning           int32
+	lastMetricsSourceTimestamp time.Time
 }
 
 func New(cfg config.Config, kubeClients *kube.Clients, backend *transport.Client) *Runner {
@@ -176,6 +177,11 @@ func (r *Runner) runMetrics(ctx context.Context) error {
 		return nil
 	}
 
+	latestCollectedAt := latestSampleTimestamp(samples)
+	if !latestCollectedAt.IsZero() && !latestCollectedAt.After(r.lastMetricsSourceTimestamp) {
+		return nil
+	}
+
 	req := model.PushMetricsRequest{
 		Cluster:          r.cluster,
 		BatchCollectedAt: time.Now().UTC(),
@@ -183,7 +189,22 @@ func (r *Runner) runMetrics(ctx context.Context) error {
 		Samples:          samples,
 	}
 
-	return r.backend.PushMetrics(ctx, req)
+	if err := r.backend.PushMetrics(ctx, req); err != nil {
+		return err
+	}
+
+	r.lastMetricsSourceTimestamp = latestCollectedAt
+	return nil
+}
+
+func latestSampleTimestamp(samples []model.MetricPointPayload) time.Time {
+	var latest time.Time
+	for _, s := range samples {
+		if s.CollectedAt.After(latest) {
+			latest = s.CollectedAt
+		}
+	}
+	return latest
 }
 
 func (r *Runner) runHeartbeat(ctx context.Context) error {
