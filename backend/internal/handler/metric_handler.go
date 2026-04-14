@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"backend/internal/model"
-	"backend/internal/repository"
 	"backend/internal/service"
 
 	"github.com/go-chi/chi/v5"
@@ -130,16 +129,16 @@ func (h *MetricHandler) ForecastMetric(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrInvalidMetricsPayload):
-			writeError(w, http.StatusBadRequest, "invalid forecast request")
+			writeError(w, http.StatusBadRequest, "invalid metrics payload")
 			return
-		case errors.Is(err, service.ErrInsufficientForecastData):
-			writeError(w, http.StatusBadRequest, "insufficient forecast data")
+		case errors.Is(err, service.ErrAgentClusterNotAssigned):
+			writeError(w, http.StatusConflict, "agent is not assigned to a cluster")
 			return
-		case errors.Is(err, repository.ErrMetricSeriesNotFound):
-			writeError(w, http.StatusNotFound, "metric series not found")
+		case errors.Is(err, service.ErrClusterUIDMismatch):
+			writeError(w, http.StatusConflict, "cluster uid does not match bound cluster")
 			return
 		default:
-			writeError(w, http.StatusInternalServerError, "forecast failed")
+			writeError(w, http.StatusInternalServerError, "failed to ingest metrics")
 			return
 		}
 	}

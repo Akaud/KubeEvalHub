@@ -194,7 +194,7 @@ function MetricsTooltip({ active, payload, label }) {
 }
 
 export default function ClusterMetricsDetailPage() {
-  const { agentId } = useParams()
+  const { clusterId } = useParams()
   const navigate = useNavigate()
   const { isAuthenticated, isReady } = useAuth()
 
@@ -222,7 +222,7 @@ export default function ClusterMetricsDetailPage() {
   }, [predictionModel])
 
   const loadClusterAndMetrics = useCallback(async (refresh = false) => {
-    if (!isAuthenticated || !agentId) return
+    if (!isAuthenticated || !clusterId) return
 
     if (refresh) {
       setIsRefreshing(true)
@@ -243,11 +243,11 @@ export default function ClusterMetricsDetailPage() {
       }
 
       const clusters = Array.isArray(clustersData) ? clustersData : []
-      const currentCluster = clusters.find((item) => item.agentId === agentId) || null
+      const currentCluster = clusters.find((item) => item.id === clusterId) || null
       setCluster(currentCluster)
 
       const metricsRes = await apiFetch(
-        `/api/clusters/${agentId}/metrics?from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00Z`
+        `/api/clusters/${clusterId}/metrics?from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00Z`
       )
 
       const metricsData = await metricsRes.json().catch(() => null)
@@ -263,7 +263,7 @@ export default function ClusterMetricsDetailPage() {
       setIsLoading(false)
       setIsRefreshing(false)
     }
-  }, [isAuthenticated, agentId])
+  }, [isAuthenticated, clusterId])
 
   useEffect(() => {
     if (!isReady || !isAuthenticated) return
@@ -384,7 +384,7 @@ export default function ClusterMetricsDetailPage() {
   }, [predictionHistoryLimit, predictionSteps, predictionModel])
 
   const loadPrediction = useCallback(async () => {
-    if (!isAuthenticated || !agentId || !selectedItem) return
+    if (!isAuthenticated || !clusterId || !selectedItem) return
 
     setIsPredicting(true)
     setError('')
@@ -398,7 +398,7 @@ export default function ClusterMetricsDetailPage() {
         historyLimit: predictionHistoryLimit,
       }
 
-      const res = await apiFetch(`/api/clusters/${agentId}/forecast`, {
+      const res = await apiFetch(`/api/clusters/${clusterId}/forecast`, {
         method: 'POST',
         body: JSON.stringify(body),
       })
@@ -418,7 +418,7 @@ export default function ClusterMetricsDetailPage() {
     } finally {
       setIsPredicting(false)
     }
-  }, [isAuthenticated, agentId, selectedItem, predictionHistoryLimit, predictionSteps, predictionModel])
+  }, [isAuthenticated, clusterId, selectedItem, predictionHistoryLimit, predictionSteps, predictionModel])
 
   const forecastPoints = useMemo(() => {
     if (!showPrediction) return []
@@ -464,7 +464,7 @@ export default function ClusterMetricsDetailPage() {
               <button
                 type="button"
                 className="dashboard-nav-button"
-                onClick={() => navigate('/dashboard/clusters')}
+                onClick={() => navigate('/dashboard')}
               >
                 Back to clusters
               </button>

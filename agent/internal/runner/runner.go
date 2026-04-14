@@ -68,7 +68,6 @@ func (r *Runner) Run(ctx context.Context) error {
 	defer inventoryTicker.Stop()
 	defer heartbeatTicker.Stop()
 
-	// initial sync (blocking is fine here)
 	if err := r.runInventory(ctx, true); err != nil {
 		log.Printf("initial inventory sync error: %v", err)
 	}

@@ -18,6 +18,7 @@ var (
 	ErrInvalidMetricsPayload    = errors.New("invalid metrics payload")
 	ErrClusterUIDMismatch       = errors.New("cluster uid mismatch")
 	ErrInsufficientForecastData = errors.New("insufficient forecast data")
+	ErrAgentClusterNotAssigned  = errors.New("agent is not assigned to a cluster")
 )
 
 type MetricService interface {
@@ -25,14 +26,14 @@ type MetricService interface {
 	GetClusterMetrics(
 		ctx context.Context,
 		ownerID int64,
-		agentID string,
+		clusterID string,
 		from time.Time,
 		to time.Time,
 	) (*model.ClusterMetricsResponse, error)
 	ForecastClusterMetric(
 		ctx context.Context,
 		ownerID int64,
-		agentID string,
+		clusterID string,
 		req *model.ForecastRequest,
 	) (*model.ForecastResponse, error)
 }
@@ -56,25 +57,35 @@ func (s *metricService) IngestMetrics(ctx context.Context, agentID string, req *
 	if req == nil {
 		return ErrInvalidMetricsPayload
 	}
-	if strings.TrimSpace(agentID) == "" {
+
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
 		return ErrInvalidMetricsPayload
 	}
+
 	if strings.TrimSpace(req.Cluster.ClusterUID) == "" ||
-		strings.TrimSpace(req.Cluster.ClusterName) == "" ||
 		strings.TrimSpace(req.Cluster.KubeVersion) == "" {
 		return ErrInvalidMetricsPayload
 	}
+
 	if len(req.Samples) == 0 {
 		return ErrInvalidMetricsPayload
 	}
 
 	now := time.Now().UTC()
 
-	existingCluster, err := s.clusterRepo.GetByAgentID(ctx, agentID)
-	if err != nil && !errors.Is(err, repository.ErrClusterNotFound) {
+	cluster, err := s.clusterRepo.GetByAgentID(ctx, agentID)
+	if err != nil {
+		if errors.Is(err, repository.ErrClusterNotFound) {
+			return ErrAgentClusterNotAssigned
+		}
 		return err
 	}
-	if existingCluster != nil && existingCluster.ClusterUID != req.Cluster.ClusterUID {
+
+	incomingClusterUID := strings.TrimSpace(req.Cluster.ClusterUID)
+
+	// Only enforce UID match if cluster already has a discovered UID.
+	if strings.TrimSpace(cluster.ClusterUID) != "" && cluster.ClusterUID != incomingClusterUID {
 		return ErrClusterUIDMismatch
 	}
 
@@ -83,22 +94,16 @@ func (s *metricService) IngestMetrics(ctx context.Context, agentID string, req *
 		distribution = "unknown"
 	}
 
-	cluster := &model.AgentCluster{
-		AgentID:       agentID,
-		ClusterUID:    strings.TrimSpace(req.Cluster.ClusterUID),
-		ClusterName:   strings.TrimSpace(req.Cluster.ClusterName),
-		KubeVersion:   strings.TrimSpace(req.Cluster.KubeVersion),
-		Distribution:  distribution,
-		APIServerHost: strings.TrimSpace(req.Cluster.APIServerHost),
-		CreatedAt:     now,
-		UpdatedAt:     now,
-	}
-
-	if existingCluster != nil {
-		cluster.CreatedAt = existingCluster.CreatedAt
-	}
-
-	if err := s.clusterRepo.Upsert(ctx, cluster); err != nil {
+	if err := s.clusterRepo.UpdateMetadataByAgentID(
+		ctx,
+		agentID,
+		incomingClusterUID,
+		cluster.ClusterName,
+		strings.TrimSpace(req.Cluster.KubeVersion),
+		distribution,
+		strings.TrimSpace(req.Cluster.APIServerHost),
+		now,
+	); err != nil {
 		return err
 	}
 
@@ -111,7 +116,7 @@ func (s *metricService) IngestMetrics(ctx context.Context, agentID string, req *
 
 		series := &model.MetricSeries{
 			ID:             uuid.NewString(),
-			AgentID:        agentID,
+			ClusterID:      cluster.ID,
 			MetricName:     strings.TrimSpace(point.MetricName),
 			MetricType:     strings.TrimSpace(point.MetricType),
 			Unit:           strings.TrimSpace(point.Unit),
@@ -179,18 +184,19 @@ func stringPtrOrNil(v string) *string {
 func (s *metricService) GetClusterMetrics(
 	ctx context.Context,
 	ownerID int64,
-	agentID string,
+	clusterID string,
 	from time.Time,
 	to time.Time,
 ) (*model.ClusterMetricsResponse, error) {
-	if ownerID <= 0 || strings.TrimSpace(agentID) == "" {
+	clusterID = strings.TrimSpace(clusterID)
+	if ownerID <= 0 || clusterID == "" {
 		return nil, ErrInvalidMetricsPayload
 	}
 	if from.IsZero() || to.IsZero() || to.Before(from) {
 		return nil, ErrInvalidMetricsPayload
 	}
 
-	rows, err := s.metricRepo.GetClusterMetricSamples(ctx, ownerID, agentID, from, to)
+	rows, err := s.metricRepo.GetClusterMetricSamples(ctx, ownerID, clusterID, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +210,7 @@ func (s *metricService) GetClusterMetrics(
 			item = &model.MetricSeriesWithSamples{
 				Series: model.MetricSeries{
 					ID:             row.SeriesID,
-					AgentID:        row.AgentID,
+					ClusterID:      row.ClusterID,
 					MetricName:     row.MetricName,
 					MetricType:     row.MetricType,
 					Unit:           row.Unit,
@@ -236,7 +242,7 @@ func (s *metricService) GetClusterMetrics(
 	}
 
 	return &model.ClusterMetricsResponse{
-		ClusterID: agentID,
+		ClusterID: clusterID,
 		From:      from,
 		To:        to,
 		Items:     items,
@@ -246,10 +252,11 @@ func (s *metricService) GetClusterMetrics(
 func (s *metricService) ForecastClusterMetric(
 	ctx context.Context,
 	ownerID int64,
-	agentID string,
+	clusterID string,
 	req *model.ForecastRequest,
 ) (*model.ForecastResponse, error) {
-	if ownerID <= 0 || strings.TrimSpace(agentID) == "" || req == nil {
+	clusterID = strings.TrimSpace(clusterID)
+	if ownerID <= 0 || clusterID == "" || req == nil {
 		return nil, ErrInvalidMetricsPayload
 	}
 
@@ -274,7 +281,7 @@ func (s *metricService) ForecastClusterMetric(
 	)
 
 	if req.SeriesID != "" {
-		series, err = s.metricRepo.GetSeriesByIDForOwner(ctx, ownerID, agentID, req.SeriesID)
+		series, err = s.metricRepo.GetSeriesByIDForOwner(ctx, ownerID, clusterID, req.SeriesID)
 	} else {
 		if req.MetricName == "" || req.ResourceKind == "" {
 			return nil, ErrInvalidMetricsPayload
@@ -283,7 +290,7 @@ func (s *metricService) ForecastClusterMetric(
 		series, err = s.metricRepo.FindSeriesByIdentity(
 			ctx,
 			ownerID,
-			agentID,
+			clusterID,
 			req.MetricName,
 			req.ResourceKind,
 			trimPtr(req.NodeName),

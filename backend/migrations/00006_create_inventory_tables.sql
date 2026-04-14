@@ -3,18 +3,18 @@
 
 CREATE TABLE inventory_snapshots (
     id uuid PRIMARY KEY,
-    agent_id uuid NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    cluster_id uuid NOT NULL REFERENCES agent_clusters(id) ON DELETE CASCADE,
     collected_at timestamptz NOT NULL,
     received_at timestamptz NOT NULL,
     created_at timestamptz NOT NULL,
     revision_hash text
 );
 
-CREATE INDEX inventory_snapshots_agent_id_collected_at_idx
-ON inventory_snapshots (agent_id, collected_at DESC);
+CREATE INDEX inventory_snapshots_cluster_id_collected_at_idx
+ON inventory_snapshots (cluster_id, collected_at DESC);
 
-CREATE INDEX inventory_snapshots_agent_revision_idx
-ON inventory_snapshots (agent_id, revision_hash);
+CREATE INDEX inventory_snapshots_cluster_revision_idx
+ON inventory_snapshots (cluster_id, revision_hash);
 
 CREATE TABLE inventory_namespaces (
     id uuid PRIMARY KEY,
@@ -184,8 +184,8 @@ DROP INDEX IF EXISTS inventory_namespaces_snapshot_id_idx;
 DROP INDEX IF EXISTS inventory_namespaces_snapshot_uid_uidx;
 DROP TABLE IF EXISTS inventory_namespaces;
 
-DROP INDEX IF EXISTS inventory_snapshots_agent_revision_idx;
-DROP INDEX IF EXISTS inventory_snapshots_agent_id_collected_at_idx;
+DROP INDEX IF EXISTS inventory_snapshots_cluster_revision_idx;
+DROP INDEX IF EXISTS inventory_snapshots_cluster_id_collected_at_idx;
 DROP TABLE IF EXISTS inventory_snapshots;
 
 -- +goose StatementEnd

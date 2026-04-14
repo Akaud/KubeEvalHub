@@ -87,7 +87,7 @@ async function readJsonSafely(res) {
 }
 
 export default function ClusterRecommendationsPage() {
-  const { agentId } = useParams()
+  const { clusterId } = useParams()
   const navigate = useNavigate()
   const { isAuthenticated, isReady } = useAuth()
 
@@ -110,7 +110,7 @@ export default function ClusterRecommendationsPage() {
   const [error, setError] = useState('')
 
   const loadData = async () => {
-    if (!isAuthenticated || !agentId) return
+    if (!isAuthenticated || !clusterId) return
 
     setIsLoading(true)
     setError('')
@@ -123,22 +123,22 @@ export default function ClusterRecommendationsPage() {
 
       const requests = [
         {
-          url: `/api/clusters/${agentId}/recommendations?${query}`,
+          url: `/api/clusters/${clusterId}/recommendations?${query}`,
           setter: setRecommendations,
           errorMessage: 'Failed to load recommendations',
         },
         {
-          url: `/api/clusters/${agentId}/analysis/overprovisioned?${query}`,
+          url: `/api/clusters/${clusterId}/analysis/overprovisioned?${query}`,
           setter: setOverProvisioned,
           errorMessage: 'Failed to load over-provisioned workloads',
         },
         {
-          url: `/api/clusters/${agentId}/analysis/underprovisioned?${query}`,
+          url: `/api/clusters/${clusterId}/analysis/underprovisioned?${query}`,
           setter: setUnderProvisioned,
           errorMessage: 'Failed to load under-provisioned workloads',
         },
         {
-          url: `/api/clusters/${agentId}/capacity?${query}`,
+          url: `/api/clusters/${clusterId}/capacity?${query}`,
           setter: setCapacity,
           errorMessage: 'Failed to load capacity',
         },
@@ -179,7 +179,7 @@ export default function ClusterRecommendationsPage() {
     const intervalId = setInterval(loadData, 30000)
 
     return () => clearInterval(intervalId)
-  }, [isReady, isAuthenticated, agentId, from, to])
+  }, [isReady, isAuthenticated, clusterId, from, to])
 
   const recommendationItems = Array.isArray(recommendations)
     ? recommendations
@@ -215,14 +215,14 @@ export default function ClusterRecommendationsPage() {
       <div className="dashboard-header">
         <div>
           <h1>Cluster recommendations</h1>
-          <p>Right-sizing, pressure, and capacity signals for cluster {agentId}.</p>
+          <p>Right-sizing, pressure, and capacity signals for cluster {clusterId}.</p>
         </div>
 
         <div className="cluster-actions">
           <button
             type="button"
             className="dashboard-nav-button"
-            onClick={() => navigate('/dashboard/clusters')}
+            onClick={() => navigate('/dashboard')}
           >
             Back to clusters
           </button>

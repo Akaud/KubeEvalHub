@@ -24,7 +24,7 @@ type InventoryRepository interface {
 	GetLatestSnapshotForOwner(
 		ctx context.Context,
 		ownerID int64,
-		agentID string,
+		clusterID string,
 	) (*model.InventorySnapshot, error)
 
 	GetNamespacesBySnapshotID(
@@ -70,7 +70,7 @@ func (r *inventoryRepository) InsertSnapshot(ctx context.Context, snapshot *mode
 	query := `
 		INSERT INTO inventory_snapshots (
 			id,
-			agent_id,
+			cluster_id,
 			collected_at,
 			received_at,
 			created_at,
@@ -82,7 +82,7 @@ func (r *inventoryRepository) InsertSnapshot(ctx context.Context, snapshot *mode
 		ctx,
 		query,
 		snapshot.ID,
-		snapshot.AgentID,
+		snapshot.ClusterID,
 		snapshot.CollectedAt,
 		snapshot.ReceivedAt,
 		snapshot.CreatedAt,
@@ -403,29 +403,29 @@ func (r *inventoryRepository) InsertContainerStatuses(ctx context.Context, items
 func (r *inventoryRepository) GetLatestSnapshotForOwner(
 	ctx context.Context,
 	ownerID int64,
-	agentID string,
+	clusterID string,
 ) (*model.InventorySnapshot, error) {
 	query := `
 		SELECT
 			s.id,
-			s.agent_id,
+			s.cluster_id,
 			s.collected_at,
 			s.received_at,
 			s.created_at,
 			s.revision_hash
 		FROM inventory_snapshots s
-		JOIN agents a
-			ON a.id = s.agent_id
-		WHERE s.agent_id = $1
-		  AND a.owner_id = $2
+		JOIN agent_clusters ac
+			ON ac.id = s.cluster_id
+		WHERE s.cluster_id = $1
+		  AND ac.owner_id = $2
 		ORDER BY s.collected_at DESC, s.created_at DESC
 		LIMIT 1
 	`
 
 	var snapshot model.InventorySnapshot
-	err := r.pool.QueryRow(ctx, query, agentID, ownerID).Scan(
+	err := r.pool.QueryRow(ctx, query, clusterID, ownerID).Scan(
 		&snapshot.ID,
-		&snapshot.AgentID,
+		&snapshot.ClusterID,
 		&snapshot.CollectedAt,
 		&snapshot.ReceivedAt,
 		&snapshot.CreatedAt,

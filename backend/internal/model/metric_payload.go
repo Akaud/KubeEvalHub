@@ -11,7 +11,6 @@ type PushMetricsRequest struct {
 
 type AgentClusterPayload struct {
 	ClusterUID    string `json:"clusterUid"`
-	ClusterName   string `json:"clusterName"`
 	KubeVersion   string `json:"kubeVersion"`
 	Distribution  string `json:"distribution"`
 	APIServerHost string `json:"apiServerHost"`

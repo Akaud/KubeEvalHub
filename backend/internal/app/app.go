@@ -33,7 +33,7 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 	agentHandler := handler.NewAgentHandler(agentService)
 
 	clusterRepo := repository.NewClusterRepository(pool)
-	clusterService := service.NewClusterService(clusterRepo)
+	clusterService := service.NewClusterService(clusterRepo, agentRepo)
 	clusterHandler := handler.NewClusterHandler(clusterService)
 
 	metricRepo := repository.NewMetricRepository(pool)
@@ -91,7 +91,12 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 
 	r.Route("/clusters", func(r chi.Router) {
 		r.Use(jwtAuthMiddleware)
+
+		r.Post("/", clusterHandler.CreateCluster)
+		r.Post("/{id}/assign-agent", clusterHandler.AssignAgentToCluster)
 		r.Get("/", clusterHandler.ListClusters)
+		r.Delete("/{id}", clusterHandler.DeleteCluster)
+
 		r.Get("/{id}/metrics", metricHandler.GetClusterMetrics)
 		r.Get("/{id}/inventory/latest", inventoryHandler.GetLatestInventory)
 		r.Post("/{id}/forecast", metricHandler.ForecastMetric)

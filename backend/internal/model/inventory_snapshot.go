@@ -4,7 +4,7 @@ import "time"
 
 type InventorySnapshot struct {
 	ID           string    `json:"id"`
-	AgentID      string    `json:"agentId"`
+	ClusterID    string    `json:"clusterId"`
 	CollectedAt  time.Time `json:"collectedAt"`
 	ReceivedAt   time.Time `json:"receivedAt"`
 	CreatedAt    time.Time `json:"createdAt"`

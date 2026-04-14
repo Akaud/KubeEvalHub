@@ -4,7 +4,7 @@ import "time"
 
 type MetricSeries struct {
 	ID           string `json:"id"`
-	AgentID      string `json:"agentId"`
+	ClusterID    string `json:"clusterId"`
 	MetricName   string `json:"metricName"`
 	MetricType   string `json:"metricType"`
 	Unit         string `json:"unit"`

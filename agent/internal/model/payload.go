@@ -5,30 +5,28 @@ import "time"
 type PushMetricsRequest struct {
 	Cluster          ClusterPayload       `json:"cluster"`
 	BatchCollectedAt time.Time            `json:"batchCollectedAt"`
-	Source           string               `json:"source"` // e.g. "metrics-server"
+	Source           string               `json:"source"`
 	Samples          []MetricPointPayload `json:"samples"`
 }
 
 type PushInventoryRequest struct {
 	Cluster      ClusterPayload   `json:"cluster"`
 	CollectedAt  time.Time        `json:"collectedAt"`
-	RevisionHash string           `json:"revisionHash,omitempty"` // stable hash of normalized inventory content
+	RevisionHash string           `json:"revisionHash,omitempty"`
 	Inventory    InventoryPayload `json:"inventory"`
 }
 
 type ClusterPayload struct {
 	ClusterUID    string `json:"clusterUid"`
-	ClusterName   string `json:"clusterName"`
 	KubeVersion   string `json:"kubeVersion"`
 	Distribution  string `json:"distribution"`
 	APIServerHost string `json:"apiServerHost"`
 }
 
 type MetricPointPayload struct {
-	MetricName string `json:"metricName"`
-	MetricType string `json:"metricType"` // gauge
-	Unit       string `json:"unit"`       // cores, bytes
-	// node, pod, container
+	MetricName   string `json:"metricName"`
+	MetricType   string `json:"metricType"`
+	Unit         string `json:"unit"`
 	ResourceKind string `json:"resourceKind"`
 
 	NodeName string `json:"nodeName,omitempty"`
@@ -139,12 +137,10 @@ type ContainerStatusPayload struct {
 	Name        string `json:"name"`
 	ContainerID string `json:"containerId,omitempty"`
 
-	RestartCount int32 `json:"restartCount"`
-	Ready        bool  `json:"ready"`
-	Started      *bool `json:"started,omitempty"`
-
-	// running, waiting, terminated
-	State string `json:"state,omitempty"`
+	RestartCount int32  `json:"restartCount"`
+	Ready        bool   `json:"ready"`
+	Started      *bool  `json:"started,omitempty"`
+	State        string `json:"state,omitempty"`
 
 	LastTerminationReason   string `json:"lastTerminationReason,omitempty"`
 	LastTerminationExitCode *int32 `json:"lastTerminationExitCode,omitempty"`

@@ -2,11 +2,10 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import DashboardLayout from './pages/DashboardLayout'
-import ClustersPage from './pages/dashboard/ClustersPage'
+import DashboardPage from './pages/dashboard/DashboardPage'
 import ClusterMetricsDetailPage from './pages/dashboard/ClusterMetricsDetailPage'
 import ClusterInventoryDetailPage from './pages/dashboard/ClusterInventoryDetailPage'
 import ClusterRecommendationsPage from './pages/dashboard/ClusterRecommendationsPage'
-import AgentsPage from './pages/dashboard/AgentsPage'
 import SettingsPage from './pages/dashboard/SettingsPage'
 import ProtectedRoute from './components/ProtectedRoute'
 import HelpPage from './pages/dashboard/HelpPage'
@@ -27,21 +26,21 @@ function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="/dashboard/clusters" replace />} />
-        <Route path="clusters" element={<ClustersPage />} />
+        <Route index element={<DashboardPage />} />
+
         <Route
-          path="clusters/:agentId/metrics"
+          path="clusters/:clusterId/metrics"
           element={<ClusterMetricsDetailPage />}
         />
         <Route
-          path="clusters/:agentId/inventory"
+          path="clusters/:clusterId/inventory"
           element={<ClusterInventoryDetailPage />}
         />
         <Route
-          path="clusters/:agentId/recommendations"
+          path="clusters/:clusterId/recommendations"
           element={<ClusterRecommendationsPage />}
         />
-        <Route path="agents" element={<AgentsPage />} />
+
         <Route path="settings" element={<SettingsPage />} />
         <Route path="help" element={<HelpPage />} />
       </Route>

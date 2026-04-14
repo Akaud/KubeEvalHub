@@ -3,8 +3,6 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import {
   FiHome,
-  FiServer,
-  FiCpu,
   FiSettings,
   FiHelpCircle,
   FiLogOut,
@@ -51,33 +49,14 @@ export default function DashboardLayout() {
             <p className="sidebar-section-title">Menu</p>
 
             <NavLink
-              to="/dashboard/clusters"
+              to="/dashboard"
+              end
               className={({ isActive }) =>
                 `sidebar-item ${isActive ? 'active' : ''}`
               }
             >
               <FiHome />
               <span>Dashboard</span>
-            </NavLink>
-
-            <NavLink
-              to="/dashboard/clusters"
-              className={({ isActive }) =>
-                `sidebar-item ${isActive ? 'active' : ''}`
-              }
-            >
-              <FiServer />
-              <span>Clusters</span>
-            </NavLink>
-
-            <NavLink
-              to="/dashboard/agents"
-              className={({ isActive }) =>
-                `sidebar-item ${isActive ? 'active' : ''}`
-              }
-            >
-              <FiCpu />
-              <span>Agents</span>
             </NavLink>
           </div>
 

@@ -60,8 +60,8 @@ function flattenPodContainers(inventoryPayload) {
       podName: pod.name,
       nodeName: pod.nodeName,
       phase: pod.phase,
-      ownerKind: pod.ownerKind,
-      ownerName: pod.ownerName,
+      ownerKind: pod.controllerKind,
+      ownerName: pod.controllerName,
       containerName: container.name,
       image: container.image,
       cpuRequestMillicores: container.cpuRequestMillicores,
@@ -81,7 +81,7 @@ function getPhaseBadgeClass(phase) {
 }
 
 export default function ClusterInventoryDetailPage() {
-  const { agentId } = useParams()
+  const { clusterId } = useParams()
   const navigate = useNavigate()
   const { isAuthenticated, isReady } = useAuth()
 
@@ -92,7 +92,7 @@ export default function ClusterInventoryDetailPage() {
   const [error, setError] = useState('')
 
   const loadClusterAndInventory = useCallback(async (refresh = false) => {
-    if (!isAuthenticated || !agentId) return
+    if (!isAuthenticated || !clusterId) return
 
     if (refresh) {
       setIsRefreshing(true)
@@ -111,10 +111,10 @@ export default function ClusterInventoryDetailPage() {
       }
 
       const clusters = Array.isArray(clustersData) ? clustersData : []
-      const currentCluster = clusters.find((item) => item.agentId === agentId) || null
+      const currentCluster = clusters.find((item) => item.id === clusterId) || null
       setCluster(currentCluster)
 
-      const inventoryRes = await apiFetch(`/api/clusters/${agentId}/inventory/latest`)
+      const inventoryRes = await apiFetch(`/api/clusters/${clusterId}/inventory/latest`)
       const inventoryData = await inventoryRes.json().catch(() => null)
 
       if (!inventoryRes.ok) {
@@ -128,7 +128,7 @@ export default function ClusterInventoryDetailPage() {
       setIsLoading(false)
       setIsRefreshing(false)
     }
-  }, [isAuthenticated, agentId])
+  }, [isAuthenticated, clusterId])
 
   useEffect(() => {
     if (!isReady || !isAuthenticated) return
@@ -193,7 +193,7 @@ export default function ClusterInventoryDetailPage() {
               <button
                 type="button"
                 className="dashboard-nav-button"
-                onClick={() => navigate(`/dashboard/clusters/${agentId}/metrics`)}
+                onClick={() => navigate(`/dashboard/clusters/${clusterId}/metrics`)}
               >
                 View metrics
               </button>

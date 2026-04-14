@@ -1391,3 +1391,251 @@ body.theme-dark {
   display: grid;
   gap: 20px;
 }
+
+
+.agent-list-item {
+  display: grid;
+  grid-template-columns: minmax(320px, 1.2fr) minmax(360px, 0.9fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.agent-list-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-list-main h4 {
+  margin: 0 0 6px;
+}
+
+.agent-list-main p {
+  margin: 0;
+  color: #667085;
+  line-height: 1.45;
+}
+
+
+.cluster-side-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.cluster-side-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.assignment-card {
+  background: #f8fafc;
+  border: 1px solid #e4e7ec;
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.assignment-card-header h5 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #101828;
+}
+
+.assignment-card-header p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #667085;
+}
+
+.assignment-current {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid #eaecf0;
+  border-radius: 12px;
+}
+
+.assignment-current-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #667085;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.assignment-current-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #101828;
+  text-align: right;
+  word-break: break-word;
+}
+
+.assignment-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.assignment-select-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.assignment-select-group span {
+  font-size: 13px;
+  font-weight: 600;
+  color: #344054;
+}
+
+.assignment-select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid #d0d5dd;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #101828;
+  font-size: 14px;
+  outline: none;
+}
+
+.assignment-select:focus {
+  border-color: #16a34a;
+  box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12);
+}
+
+.assignment-button {
+  min-width: 160px;
+  min-height: 44px;
+  border-radius: 12px;
+}
+
+.cluster-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cluster-meta-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.cluster-meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #f0f2f5;
+}
+
+.cluster-meta-row span {
+  font-size: 13px;
+  color: #667085;
+  flex-shrink: 0;
+}
+
+.cluster-meta-row strong {
+  font-size: 13px;
+  color: #101828;
+  text-align: right;
+  word-break: break-word;
+}
+
+.dashboard-layout-dark .cluster-side-panel {
+  color: #f9fafb;
+}
+
+.dashboard-layout-dark .assignment-card {
+  background: #111827;
+  border-color: #374151;
+}
+
+.dashboard-layout-dark .assignment-card-header h5 {
+  color: #f9fafb;
+}
+
+.dashboard-layout-dark .assignment-card-header p {
+  color: #9ca3af;
+}
+
+.dashboard-layout-dark .assignment-current {
+  background: #0f172a;
+  border-color: #334155;
+}
+
+.dashboard-layout-dark .assignment-current-label {
+  color: #9ca3af;
+}
+
+.dashboard-layout-dark .assignment-current-value {
+  color: #f9fafb;
+}
+
+.dashboard-layout-dark .assignment-select-group span {
+  color: #d1d5db;
+}
+
+.dashboard-layout-dark .assignment-select {
+  background: #1f2937;
+  color: #f9fafb;
+  border-color: #4b5563;
+}
+
+.dashboard-layout-dark .assignment-select option {
+  background: #1f2937;
+  color: #f9fafb;
+}
+
+.dashboard-layout-dark .cluster-meta-row {
+  border-bottom-color: #374151;
+}
+
+.dashboard-layout-dark .cluster-meta-row span {
+  color: #9ca3af;
+}
+
+.dashboard-layout-dark .cluster-meta-row strong {
+  color: #f9fafb;
+}
+
+.dashboard-layout-dark .state-badge-enabled {
+  background: rgba(34, 197, 94, 0.16);
+  color: #86efac;
+}
+
+.dashboard-layout-dark .cluster-actions .dashboard-nav-button {
+  color: #d1d5db;
+}
+
+.dashboard-layout-dark .cluster-actions .dashboard-nav-button:hover {
+  background: #1f2937;
+  border-color: #374151;
+}
+
+.dashboard-layout-dark .cluster-actions .dashboard-nav-button.is-primary {
+  background: #166534;
+  color: #ffffff;
+}
+
+.dashboard-layout-dark .cluster-actions .dashboard-nav-button.is-primary:hover {
+  background: #15803d;
+  border-color: #15803d;
+}

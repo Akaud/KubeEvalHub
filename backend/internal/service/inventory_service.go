@@ -17,7 +17,7 @@ var ErrInvalidInventoryPayload = errors.New("invalid inventory payload")
 
 type InventoryService interface {
 	IngestInventory(ctx context.Context, agentID string, req *model.PushInventoryRequest) error
-	GetLatestInventory(ctx context.Context, ownerID int64, agentID string) (*model.InventorySnapshotResponse, error)
+	GetLatestInventory(ctx context.Context, ownerID int64, clusterID string) (*model.InventorySnapshotResponse, error)
 }
 
 type inventoryService struct {
@@ -39,25 +39,30 @@ func (s *inventoryService) IngestInventory(ctx context.Context, agentID string, 
 	if req == nil {
 		return ErrInvalidInventoryPayload
 	}
-	if strings.TrimSpace(agentID) == "" {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
 		return ErrInvalidInventoryPayload
 	}
 	if req.CollectedAt.IsZero() {
 		return ErrInvalidInventoryPayload
 	}
 	if strings.TrimSpace(req.Cluster.ClusterUID) == "" ||
-		strings.TrimSpace(req.Cluster.ClusterName) == "" ||
 		strings.TrimSpace(req.Cluster.KubeVersion) == "" {
 		return ErrInvalidInventoryPayload
 	}
 
 	now := time.Now().UTC()
+	incomingClusterUID := strings.TrimSpace(req.Cluster.ClusterUID)
 
-	existingCluster, err := s.clusterRepo.GetByAgentID(ctx, agentID)
-	if err != nil && !errors.Is(err, repository.ErrClusterNotFound) {
+	cluster, err := s.clusterRepo.GetByAgentID(ctx, agentID)
+	if err != nil {
+		if errors.Is(err, repository.ErrClusterNotFound) {
+			return ErrAgentClusterNotAssigned
+		}
 		return err
 	}
-	if existingCluster != nil && existingCluster.ClusterUID != req.Cluster.ClusterUID {
+
+	if strings.TrimSpace(cluster.ClusterUID) != "" && cluster.ClusterUID != incomingClusterUID {
 		return ErrClusterUIDMismatch
 	}
 
@@ -66,27 +71,22 @@ func (s *inventoryService) IngestInventory(ctx context.Context, agentID string, 
 		distribution = "unknown"
 	}
 
-	cluster := &model.AgentCluster{
-		AgentID:       agentID,
-		ClusterUID:    strings.TrimSpace(req.Cluster.ClusterUID),
-		ClusterName:   strings.TrimSpace(req.Cluster.ClusterName),
-		KubeVersion:   strings.TrimSpace(req.Cluster.KubeVersion),
-		Distribution:  distribution,
-		APIServerHost: strings.TrimSpace(req.Cluster.APIServerHost),
-		CreatedAt:     now,
-		UpdatedAt:     now,
-	}
-	if existingCluster != nil {
-		cluster.CreatedAt = existingCluster.CreatedAt
-	}
-
-	if err := s.clusterRepo.Upsert(ctx, cluster); err != nil {
+	if err := s.clusterRepo.UpdateMetadataByAgentID(
+		ctx,
+		agentID,
+		incomingClusterUID,
+		cluster.ClusterName,
+		strings.TrimSpace(req.Cluster.KubeVersion),
+		distribution,
+		strings.TrimSpace(req.Cluster.APIServerHost),
+		now,
+	); err != nil {
 		return err
 	}
 
 	snapshot := &model.InventorySnapshot{
 		ID:           uuid.NewString(),
-		AgentID:      agentID,
+		ClusterID:    cluster.ID,
 		CollectedAt:  req.CollectedAt,
 		ReceivedAt:   now,
 		CreatedAt:    now,
@@ -322,13 +322,14 @@ func int32Ptr(v int32) *int32 {
 func (s *inventoryService) GetLatestInventory(
 	ctx context.Context,
 	ownerID int64,
-	agentID string,
+	clusterID string,
 ) (*model.InventorySnapshotResponse, error) {
-	if ownerID <= 0 || strings.TrimSpace(agentID) == "" {
+	clusterID = strings.TrimSpace(clusterID)
+	if ownerID <= 0 || clusterID == "" {
 		return nil, ErrInvalidInventoryPayload
 	}
 
-	snapshot, err := s.inventoryRepo.GetLatestSnapshotForOwner(ctx, ownerID, agentID)
+	snapshot, err := s.inventoryRepo.GetLatestSnapshotForOwner(ctx, ownerID, clusterID)
 	if err != nil {
 		return nil, err
 	}
@@ -374,7 +375,7 @@ func (s *inventoryService) GetLatestInventory(
 	}
 
 	resp := &model.InventorySnapshotResponse{
-		ClusterID:   agentID,
+		ClusterID:   clusterID,
 		CollectedAt: snapshot.CollectedAt,
 		Inventory: model.InventoryPayload{
 			Namespaces:   make([]model.NamespacePayload, 0, len(namespaces)),

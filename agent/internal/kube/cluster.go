@@ -2,6 +2,7 @@ package kube
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"agent/internal/model"
@@ -20,11 +21,9 @@ func DiscoverCluster(ctx context.Context, c *Clients) (model.ClusterPayload, err
 		return model.ClusterPayload{}, err
 	}
 
-	clusterUID := "unknown"
-	clusterName := "self-hosted-cluster"
+	var clusterUID string
 	var nodeLabels map[string]string
 
-	// Better cluster-stable UID than node UID.
 	if ns, err := c.Core.CoreV1().Namespaces().Get(ctx, "kube-system", metav1.GetOptions{}); err == nil {
 		clusterUID = string(ns.UID)
 	}
@@ -32,19 +31,14 @@ func DiscoverCluster(ctx context.Context, c *Clients) (model.ClusterPayload, err
 	if len(nodes.Items) > 0 {
 		node := nodes.Items[0]
 		nodeLabels = node.Labels
+	}
 
-		clusterName = firstNonEmpty(
-			node.Labels["cluster.x-k8s.io/cluster-name"],
-			node.Labels["alpha.eksctl.io/cluster-name"],
-			node.Labels["eks.amazonaws.com/cluster-name"],
-			node.Labels["kubernetes.azure.com/cluster"],
-			"self-hosted-cluster",
-		)
+	if strings.TrimSpace(clusterUID) == "" {
+		return model.ClusterPayload{}, errors.New("failed to discover stable cluster uid")
 	}
 
 	return model.ClusterPayload{
 		ClusterUID:    clusterUID,
-		ClusterName:   clusterName,
 		KubeVersion:   versionInfo.GitVersion,
 		Distribution:  detectDistribution(versionInfo.GitVersion, versionInfo.Platform, nodeLabels),
 		APIServerHost: "",
@@ -77,7 +71,6 @@ func detectDistribution(gitVersion, platform string, labels map[string]string) s
 	}
 
 	switch {
-	// Explicit distro markers from version/platform
 	case containsAny(v, "k3s") || containsAny(p, "k3s"):
 		return "k3s"
 	case containsAny(v, "rke2") || containsAny(p, "rke2"):
@@ -87,7 +80,6 @@ func detectDistribution(gitVersion, platform string, labels map[string]string) s
 	case containsAny(v, "openshift") || containsAny(p, "openshift"):
 		return "openshift"
 
-	// Managed Kubernetes signals from node labels
 	case hasAnyLabel(
 		"eks.amazonaws.com/nodegroup",
 		"alpha.eksctl.io/nodegroup-name",
@@ -115,7 +107,6 @@ func detectDistribution(gitVersion, platform string, labels map[string]string) s
 	):
 		return "openshift"
 
-	// Additional lightweight distro signals
 	case hasAnyLabel("k3s.io/hostname"):
 		return "k3s"
 
@@ -125,13 +116,4 @@ func detectDistribution(gitVersion, platform string, labels map[string]string) s
 	default:
 		return "unknown"
 	}
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return v
-		}
-	}
-	return "unknown"
 }

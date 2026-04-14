@@ -20,14 +20,14 @@ type MetricRepository interface {
 	GetClusterMetricSamples(
 		ctx context.Context,
 		ownerID int64,
-		agentID string,
+		clusterID string,
 		from time.Time,
 		to time.Time,
 	) ([]model.MetricSampleRow, error)
 	FindSeriesByIdentity(
 		ctx context.Context,
 		ownerID int64,
-		agentID string,
+		clusterID string,
 		metricName string,
 		resourceKind string,
 		nodeName *string,
@@ -42,7 +42,7 @@ type MetricRepository interface {
 	GetSeriesByIDForOwner(
 		ctx context.Context,
 		ownerID int64,
-		agentID string,
+		clusterID string,
 		seriesID string,
 	) (*model.MetricSeries, error)
 	GetSeriesSamples(
@@ -64,7 +64,7 @@ func (r *metricRepository) UpsertSeries(ctx context.Context, series *model.Metri
 	query := `
 		INSERT INTO metric_series (
 			id,
-			agent_id,
+			cluster_id,
 			metric_name,
 			metric_type,
 			unit,
@@ -82,7 +82,7 @@ func (r *metricRepository) UpsertSeries(ctx context.Context, series *model.Metri
 		)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 		ON CONFLICT (
-			agent_id,
+			cluster_id,
 			metric_name,
 			resource_kind,
 			node_name,
@@ -106,7 +106,7 @@ func (r *metricRepository) UpsertSeries(ctx context.Context, series *model.Metri
 		ctx,
 		query,
 		series.ID,
-		series.AgentID,
+		series.ClusterID,
 		series.MetricName,
 		series.MetricType,
 		series.Unit,
@@ -201,14 +201,14 @@ func (r *metricRepository) InsertSamples(ctx context.Context, samples []model.Me
 func (r *metricRepository) GetClusterMetricSamples(
 	ctx context.Context,
 	ownerID int64,
-	agentID string,
+	clusterID string,
 	from time.Time,
 	to time.Time,
 ) ([]model.MetricSampleRow, error) {
 	query := `
 		SELECT
 			msr.id,
-			msr.agent_id,
+			msr.cluster_id,
 			msr.metric_name,
 			msr.metric_type,
 			msr.unit,
@@ -224,14 +224,12 @@ func (r *metricRepository) GetClusterMetricSamples(
 			mss.collected_at,
 			mss.value_double
 		FROM agent_clusters ac
-		JOIN agents a
-			ON a.id = ac.agent_id
 		JOIN metric_series msr
-			ON msr.agent_id = a.id
+			ON msr.cluster_id = ac.id
 		JOIN metric_samples mss
 			ON mss.series_id = msr.id
-		WHERE ac.agent_id = $1
-		  AND a.owner_id = $2
+		WHERE ac.id = $1
+		  AND ac.owner_id = $2
 		  AND mss.collected_at >= $3
 		  AND mss.collected_at <= $4
 		ORDER BY
@@ -244,7 +242,7 @@ func (r *metricRepository) GetClusterMetricSamples(
 			mss.collected_at ASC
 	`
 
-	rows, err := r.pool.Query(ctx, query, agentID, ownerID, from, to)
+	rows, err := r.pool.Query(ctx, query, clusterID, ownerID, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +253,7 @@ func (r *metricRepository) GetClusterMetricSamples(
 		var row model.MetricSampleRow
 		if err := rows.Scan(
 			&row.SeriesID,
-			&row.AgentID,
+			&row.ClusterID,
 			&row.MetricName,
 			&row.MetricType,
 			&row.Unit,
@@ -286,7 +284,7 @@ func (r *metricRepository) GetClusterMetricSamples(
 func (r *metricRepository) FindSeriesByIdentity(
 	ctx context.Context,
 	ownerID int64,
-	agentID string,
+	clusterID string,
 	metricName string,
 	resourceKind string,
 	nodeName *string,
@@ -301,7 +299,7 @@ func (r *metricRepository) FindSeriesByIdentity(
 	query := `
 		SELECT
 			msr.id,
-			msr.agent_id,
+			msr.cluster_id,
 			msr.metric_name,
 			msr.metric_type,
 			msr.unit,
@@ -317,10 +315,10 @@ func (r *metricRepository) FindSeriesByIdentity(
 			msr.created_at,
 			msr.updated_at
 		FROM metric_series msr
-		JOIN agents a
-			ON a.id = msr.agent_id
-		WHERE msr.agent_id = $1
-		  AND a.owner_id = $2
+		JOIN agent_clusters ac
+			ON ac.id = msr.cluster_id
+		WHERE msr.cluster_id = $1
+		  AND ac.owner_id = $2
 		  AND msr.metric_name = $3
 		  AND msr.resource_kind = $4
 		  AND msr.node_name IS NOT DISTINCT FROM $5
@@ -339,7 +337,7 @@ func (r *metricRepository) FindSeriesByIdentity(
 	err := r.pool.QueryRow(
 		ctx,
 		query,
-		agentID,
+		clusterID,
 		ownerID,
 		metricName,
 		resourceKind,
@@ -353,7 +351,7 @@ func (r *metricRepository) FindSeriesByIdentity(
 		controllerName,
 	).Scan(
 		&series.ID,
-		&series.AgentID,
+		&series.ClusterID,
 		&series.MetricName,
 		&series.MetricType,
 		&series.Unit,
@@ -382,13 +380,13 @@ func (r *metricRepository) FindSeriesByIdentity(
 func (r *metricRepository) GetSeriesByIDForOwner(
 	ctx context.Context,
 	ownerID int64,
-	agentID string,
+	clusterID string,
 	seriesID string,
 ) (*model.MetricSeries, error) {
 	query := `
 		SELECT
 			msr.id,
-			msr.agent_id,
+			msr.cluster_id,
 			msr.metric_name,
 			msr.metric_type,
 			msr.unit,
@@ -404,18 +402,18 @@ func (r *metricRepository) GetSeriesByIDForOwner(
 			msr.created_at,
 			msr.updated_at
 		FROM metric_series msr
-		JOIN agents a
-			ON a.id = msr.agent_id
+		JOIN agent_clusters ac
+			ON ac.id = msr.cluster_id
 		WHERE msr.id = $1
-		  AND msr.agent_id = $2
-		  AND a.owner_id = $3
+		  AND msr.cluster_id = $2
+		  AND ac.owner_id = $3
 		LIMIT 1
 	`
 
 	var series model.MetricSeries
-	err := r.pool.QueryRow(ctx, query, seriesID, agentID, ownerID).Scan(
+	err := r.pool.QueryRow(ctx, query, seriesID, clusterID, ownerID).Scan(
 		&series.ID,
-		&series.AgentID,
+		&series.ClusterID,
 		&series.MetricName,
 		&series.MetricType,
 		&series.Unit,

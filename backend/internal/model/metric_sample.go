@@ -11,8 +11,8 @@ type MetricSample struct {
 }
 
 type MetricSampleRow struct {
-	SeriesID string
-	AgentID  string
+	SeriesID  string
+	ClusterID string
 
 	MetricName   string
 	MetricType   string

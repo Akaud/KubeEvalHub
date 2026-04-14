@@ -3,7 +3,9 @@ package model
 import "time"
 
 type AgentCluster struct {
-	AgentID       string    `json:"agentId"`
+	ID            string    `json:"id"`
+	OwnerID       int64     `json:"ownerId"`
+	AgentID       *string   `json:"agentId,omitempty"`
 	ClusterUID    string    `json:"clusterUid"`
 	ClusterName   string    `json:"clusterName"`
 	KubeVersion   string    `json:"kubeVersion"`
@@ -14,7 +16,9 @@ type AgentCluster struct {
 }
 
 type ClusterView struct {
-	AgentID         string      `json:"agentId"`
+	ID              string      `json:"id"`
+	OwnerID         int64       `json:"ownerId"`
+	AgentID         *string     `json:"agentId,omitempty"`
 	ClusterUID      string      `json:"clusterUid"`
 	ClusterName     string      `json:"clusterName"`
 	KubeVersion     string      `json:"kubeVersion"`
@@ -22,4 +26,20 @@ type ClusterView struct {
 	APIServerHost   string      `json:"apiServerHost"`
 	LastHeartbeatAt *time.Time  `json:"lastHeartbeatAt,omitempty"`
 	Status          AgentStatus `json:"status"`
+}
+
+type CreateClusterRequest struct {
+	ClusterName string `json:"clusterName"`
+}
+
+type AssignAgentRequest struct {
+	AgentID string `json:"agentId"`
+}
+
+type ClusterPayload struct {
+	ClusterUID    string `json:"clusterUid"`
+	ClusterName   string `json:"clusterName"`
+	KubeVersion   string `json:"kubeVersion"`
+	Distribution  string `json:"distribution"`
+	APIServerHost string `json:"apiServerHost"`
 }
