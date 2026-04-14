@@ -11,6 +11,10 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { apiFetch } from '../../utils/apiFetch'
 
+const DEFAULT_NAMESPACE = 'kubeevalhub-agent'
+const DEFAULT_AGENT_IMAGE = 'docker.io/lewaldenko/kubeevalhubagent:1.0.0'
+const DEFAULT_BACKEND_URL = 'http://host.minikube.internal:5000'
+
 export default function DashboardPage() {
   const [clusters, setClusters] = useState([])
   const [agents, setAgents] = useState([])
@@ -35,10 +39,9 @@ export default function DashboardPage() {
   const [createAgentError, setCreateAgentError] = useState('')
   const [createdAgentResult, setCreatedAgentResult] = useState(null)
 
-  const [copied, setCopied] = useState(false)
-  const [secretCommandCopied, setSecretCommandCopied] = useState(false)
+  const [copiedToken, setCopiedToken] = useState(false)
+  const [installCommandCopied, setInstallCommandCopied] = useState(false)
   const [manifestCopied, setManifestCopied] = useState(false)
-  const [installStepsCopied, setInstallStepsCopied] = useState(false)
 
   const [togglingAgentId, setTogglingAgentId] = useState('')
   const [deletingAgentId, setDeletingAgentId] = useState('')
@@ -49,19 +52,38 @@ export default function DashboardPage() {
   const { isAuthenticated, isReady } = useAuth()
   const navigate = useNavigate()
 
-  const buildSecretCommand = (tokenValue) => {
-    return `kubectl create namespace kubeevalhub-agent
-kubectl create secret generic kubeevalhub-agent-secret \\
-  -n kubeevalhub-agent \\
-  --from-literal=AGENT_TOKEN='${tokenValue}'`
+  const getInstallConfig = () => {
+    return {
+      backendUrl: DEFAULT_BACKEND_URL,
+      image: DEFAULT_AGENT_IMAGE,
+      namespace: DEFAULT_NAMESPACE,
+    }
   }
 
-  const buildDeploymentManifest = (interval = '30s') => {
+  const buildInstallManifest = ({ token, scrapeIntervalSeconds }) => {
+    const { backendUrl, image, namespace } = getInstallConfig()
+
     return `apiVersion: v1
+kind: Namespace
+metadata:
+  name: ${namespace}
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kubeevalhub-agent-secret
+  namespace: ${namespace}
+type: Opaque
+stringData:
+  AGENT_TOKEN: "${token}"
+
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: kubeevalhub-agent
-  namespace: kubeevalhub-agent
+  namespace: ${namespace}
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -91,14 +113,14 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: kubeevalhub-agent
-    namespace: kubeevalhub-agent
+    namespace: ${namespace}
 
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: kubeevalhub-agent
-  namespace: kubeevalhub-agent
+  namespace: ${namespace}
 spec:
   replicas: 1
   selector:
@@ -112,18 +134,18 @@ spec:
       serviceAccountName: kubeevalhub-agent
       containers:
         - name: agent
-          image: kubeevalhub-agent:latest
+          image: ${image}
           imagePullPolicy: IfNotPresent
           env:
             - name: BACKEND_URL
-              value: "http://host.minikube.internal:5000"
+              value: "${backendUrl}"
             - name: AGENT_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: kubeevalhub-agent-secret
                   key: AGENT_TOKEN
             - name: SCRAPE_INTERVAL
-              value: "${interval}"
+              value: "${scrapeIntervalSeconds}s"
           resources:
             requests:
               cpu: "50m"
@@ -134,11 +156,15 @@ spec:
 `
   }
 
-  const buildInstallSteps = (tokenValue) => {
-    return `${buildSecretCommand(tokenValue)}
+  const buildInstallCommand = ({ token, scrapeIntervalSeconds }) => {
+    const { namespace } = getInstallConfig()
+    const manifest = buildInstallManifest({ token, scrapeIntervalSeconds })
 
-# save the deployment manifest to agent.yaml, then apply it
-kubectl apply -f agent.yaml`
+    return `cat <<'EOF' | kubectl apply -f -
+${manifest}
+EOF
+
+kubectl -n ${namespace} rollout status deployment/kubeevalhub-agent`
   }
 
   const loadClusters = async ({ silent = false } = {}) => {
@@ -293,10 +319,9 @@ kubectl apply -f agent.yaml`
     setScrapeInterval(30)
     setCreateAgentError('')
     setCreatedAgentResult(null)
-    setCopied(false)
-    setSecretCommandCopied(false)
+    setCopiedToken(false)
+    setInstallCommandCopied(false)
     setManifestCopied(false)
-    setInstallStepsCopied(false)
     setShowCreateAgentModal(true)
   }
 
@@ -307,10 +332,9 @@ kubectl apply -f agent.yaml`
     setScrapeInterval(30)
     setCreateAgentError('')
     setCreatedAgentResult(null)
-    setCopied(false)
-    setSecretCommandCopied(false)
+    setCopiedToken(false)
+    setInstallCommandCopied(false)
     setManifestCopied(false)
-    setInstallStepsCopied(false)
   }
 
   const handleCreateAgent = async (e) => {
@@ -336,10 +360,9 @@ kubectl apply -f agent.yaml`
     setIsCreatingAgent(true)
     setCreateAgentError('')
     setCreatedAgentResult(null)
-    setCopied(false)
-    setSecretCommandCopied(false)
+    setCopiedToken(false)
+    setInstallCommandCopied(false)
     setManifestCopied(false)
-    setInstallStepsCopied(false)
 
     try {
       const response = await apiFetch('/api/agents', {
@@ -403,6 +426,7 @@ kubectl apply -f agent.yaml`
       setAssigningClusterId('')
     }
   }
+
   const handleDeleteCluster = async (clusterId, clusterNameValue) => {
     if (!isAuthenticated) return
 
@@ -443,6 +467,7 @@ kubectl apply -f agent.yaml`
       setDeletingClusterId('')
     }
   }
+
   const handleDeleteAgent = async (agentId, agentNameValue) => {
     if (!isAuthenticated) return
 
@@ -468,10 +493,9 @@ kubectl apply -f agent.yaml`
 
       if (createdAgentResult?.agent?.id === agentId) {
         setCreatedAgentResult(null)
-        setCopied(false)
-        setSecretCommandCopied(false)
+        setCopiedToken(false)
+        setInstallCommandCopied(false)
         setManifestCopied(false)
-        setInstallStepsCopied(false)
       }
 
       await Promise.all([
@@ -520,46 +544,48 @@ kubectl apply -f agent.yaml`
 
     try {
       await navigator.clipboard.writeText(tokenToCopy)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 2000)
+      setCopiedToken(true)
+      window.setTimeout(() => setCopiedToken(false), 2000)
     } catch {
-      setCopied(false)
+      setCopiedToken(false)
     }
   }
 
-  const handleCopySecretCommand = async () => {
+  const handleCopyInstallCommand = async () => {
     const tokenValue = createdAgentResult?.token
     if (!tokenValue) return
 
     try {
-      await navigator.clipboard.writeText(buildSecretCommand(tokenValue))
-      setSecretCommandCopied(true)
-      window.setTimeout(() => setSecretCommandCopied(false), 2000)
-    } catch {
-      setSecretCommandCopied(false)
+      const command = buildInstallCommand({
+        token: tokenValue,
+        scrapeIntervalSeconds: scrapeInterval,
+      })
+
+      await navigator.clipboard.writeText(command)
+      setInstallCommandCopied(true)
+      window.setTimeout(() => setInstallCommandCopied(false), 2000)
+    } catch (error) {
+      setCreateAgentError(error.message || 'Failed to build install command.')
+      setInstallCommandCopied(false)
     }
   }
 
   const handleCopyManifest = async () => {
-    try {
-      await navigator.clipboard.writeText(buildDeploymentManifest(`${scrapeInterval}s`))
-      setManifestCopied(true)
-      window.setTimeout(() => setManifestCopied(false), 2000)
-    } catch {
-      setManifestCopied(false)
-    }
-  }
-
-  const handleCopyInstallSteps = async () => {
     const tokenValue = createdAgentResult?.token
     if (!tokenValue) return
 
     try {
-      await navigator.clipboard.writeText(buildInstallSteps(tokenValue))
-      setInstallStepsCopied(true)
-      window.setTimeout(() => setInstallStepsCopied(false), 2000)
-    } catch {
-      setInstallStepsCopied(false)
+      const manifest = buildInstallManifest({
+        token: tokenValue,
+        scrapeIntervalSeconds: scrapeInterval,
+      })
+
+      await navigator.clipboard.writeText(manifest)
+      setManifestCopied(true)
+      window.setTimeout(() => setManifestCopied(false), 2000)
+    } catch (error) {
+      setCreateAgentError(error.message || 'Failed to build YAML.')
+      setManifestCopied(false)
     }
   }
 
@@ -752,7 +778,9 @@ kubectl apply -f agent.yaml`
                                   [cluster.id]: e.target.value,
                                 }))
                               }
-                              disabled={assigningClusterId === cluster.id || deletingClusterId === cluster.id}
+                              disabled={
+                                assigningClusterId === cluster.id || deletingClusterId === cluster.id
+                              }
                             >
                               <option value="">Select agent</option>
                               {assignableAgents.map((agent) => (
@@ -989,7 +1017,7 @@ kubectl apply -f agent.yaml`
                 </label>
 
                 <label className="field-group">
-                  <span>Scrape interval for template (seconds)</span>
+                  <span>Scrape interval for installer (seconds)</span>
                   <input
                     type="number"
                     min={5}
@@ -1025,7 +1053,7 @@ kubectl apply -f agent.yaml`
               <div className="created-agent-result">
                 <div className="success-box">
                   <h4>Agent created</h4>
-                  <p>Copy the token and installation assets now. The token is shown only once.</p>
+                  <p>Run the installer on the target cluster. The token is shown only once.</p>
                 </div>
 
                 <div className="result-meta">
@@ -1035,6 +1063,12 @@ kubectl apply -f agent.yaml`
                   <div>
                     <strong>ID:</strong> {createdAgentResult.agent?.id}
                   </div>
+                  <div>
+                    <strong>Backend URL:</strong> {getInstallConfig().backendUrl}
+                  </div>
+                  <div>
+                    <strong>Image:</strong> {getInstallConfig().image}
+                  </div>
                 </div>
 
                 <div className="token-block">
@@ -1042,21 +1076,23 @@ kubectl apply -f agent.yaml`
                   <div className="token-row">
                     <code>{createdAgentResult.token}</code>
                     <button type="button" className="copy-button" onClick={handleCopyToken}>
-                      {copied ? <FiCheck /> : <FiCopy />}
-                      <span>{copied ? 'Copied' : 'Copy'}</span>
+                      {copiedToken ? <FiCheck /> : <FiCopy />}
+                      <span>{copiedToken ? 'Copied' : 'Copy'}</span>
                     </button>
                   </div>
                 </div>
 
+                {createAgentError && <div className="form-error">{createAgentError}</div>}
+
                 <div className="copy-actions-grid">
                   <button
                     type="button"
-                    className="secondary-button"
-                    onClick={handleCopySecretCommand}
+                    className="primary-button"
+                    onClick={handleCopyInstallCommand}
                   >
-                    {secretCommandCopied ? <FiCheck /> : <FiCopy />}
+                    {installCommandCopied ? <FiCheck /> : <FiCopy />}
                     <span>
-                      {secretCommandCopied ? 'Copied secret command' : 'Copy secret command'}
+                      {installCommandCopied ? 'Copied install command' : 'Copy install command'}
                     </span>
                   </button>
 
@@ -1066,18 +1102,7 @@ kubectl apply -f agent.yaml`
                     onClick={handleCopyManifest}
                   >
                     {manifestCopied ? <FiCheck /> : <FiCopy />}
-                    <span>{manifestCopied ? 'Copied agent template' : 'Copy agent template'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={handleCopyInstallSteps}
-                  >
-                    {installStepsCopied ? <FiCheck /> : <FiCopy />}
-                    <span>
-                      {installStepsCopied ? 'Copied install steps' : 'Copy install steps'}
-                    </span>
+                    <span>{manifestCopied ? 'Copied YAML' : 'Copy YAML'}</span>
                   </button>
                 </div>
 

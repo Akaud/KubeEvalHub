@@ -1,4 +1,20 @@
 apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubeevalhub-agent
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kubeevalhub-agent-secret
+  namespace: kubeevalhub-agent
+type: Opaque
+stringData:
+  AGENT_TOKEN: "54ca527b34423fe422712b8f521c14bdf799f0c39829926326c049895ec8df42"
+
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: kubeevalhub-agent
@@ -53,7 +69,7 @@ spec:
       serviceAccountName: kubeevalhub-agent
       containers:
         - name: agent
-          image: kubeevalhub-agent:latest
+          image: docker.io/lewaldenko/kubeevalhubagent:1.0.0
           imagePullPolicy: IfNotPresent
           env:
             - name: BACKEND_URL
