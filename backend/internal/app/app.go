@@ -26,11 +26,15 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 	userService := service.NewUserService(userRepo, refreshTokenRepo, cfg.JWTSecret)
 	userHandler := handler.New(userService)
 
+	jwtAuthMiddleware := handler.JWTAuthMiddleware(userService)
+
 	agentRepo := repository.NewAgentRepository(pool)
 	agentService := service.NewAgentService(agentRepo)
 	agentHandler := handler.NewAgentHandler(agentService)
 
 	clusterRepo := repository.NewClusterRepository(pool)
+	clusterService := service.NewClusterService(clusterRepo)
+	clusterHandler := handler.NewClusterHandler(clusterService)
 
 	metricRepo := repository.NewMetricRepository(pool)
 	metricService := service.NewMetricService(clusterRepo, metricRepo)
@@ -39,17 +43,14 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 	inventoryRepo := repository.NewInventoryRepository(pool)
 	inventoryService := service.NewInventoryService(clusterRepo, inventoryRepo)
 	inventoryHandler := handler.NewInventoryHandler(inventoryService)
+
 	analysisService := service.NewAnalysisService(metricRepo, inventoryRepo)
 	analysisHandler := handler.NewAnalysisHandler(analysisService)
+
 	overProvisionHandler := handler.NewOverProvisionHandler(analysisService)
 	underProvisionHandler := handler.NewUnderProvisionHandler(analysisService)
 	recommendationHandler := handler.NewRecommendationHandler(analysisService)
 	capacityHandler := handler.NewCapacityHandler(analysisService)
-
-	clusterService := service.NewClusterService(clusterRepo)
-	clusterHandler := handler.NewClusterHandler(clusterService)
-
-	jwtAuthMiddleware := handler.JWTAuthMiddleware(userService)
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -57,15 +58,13 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 	})
 
 	r.Post("/auth/login", userHandler.Login)
-	r.Post("/auth/refresh", userHandler.RefreshToken)
 	r.Post("/auth/logout", userHandler.Logout)
+	r.Post("/auth/refresh", userHandler.RefreshToken)
 
 	r.Route("/users", func(r chi.Router) {
 		r.Post("/", userHandler.CreateUser)
-
 		r.Group(func(r chi.Router) {
 			r.Use(jwtAuthMiddleware)
-
 			r.Get("/me", userHandler.GetCurrentUser)
 			r.Put("/{id}", userHandler.UpdateUser)
 			r.Patch("/{id}", userHandler.PatchUser)
