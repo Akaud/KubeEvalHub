@@ -17,7 +17,7 @@ var ErrInvalidInventoryPayload = errors.New("invalid inventory payload")
 
 type InventoryService interface {
 	IngestInventory(ctx context.Context, agentID string, req *model.PushInventoryRequest) error
-	GetLatestInventory(ctx context.Context, ownerID int64, clusterID string) (*model.InventorySnapshotResponse, error)
+	GetLatestInventory(ctx context.Context, clusterID string) (*model.InventorySnapshotResponse, error)
 }
 
 type inventoryService struct {
@@ -321,15 +321,14 @@ func int32Ptr(v int32) *int32 {
 
 func (s *inventoryService) GetLatestInventory(
 	ctx context.Context,
-	ownerID int64,
 	clusterID string,
 ) (*model.InventorySnapshotResponse, error) {
 	clusterID = strings.TrimSpace(clusterID)
-	if ownerID <= 0 || clusterID == "" {
+	if clusterID == "" {
 		return nil, ErrInvalidInventoryPayload
 	}
 
-	snapshot, err := s.inventoryRepo.GetLatestSnapshotForOwner(ctx, ownerID, clusterID)
+	snapshot, err := s.inventoryRepo.GetLatestSnapshotByClusterID(ctx, clusterID)
 	if err != nil {
 		return nil, err
 	}

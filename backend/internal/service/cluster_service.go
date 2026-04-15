@@ -13,8 +13,13 @@ import (
 )
 
 var (
-	ErrInvalidOwnerID     = errors.New("invalid owner id")
-	ErrInvalidClusterName = errors.New("cluster name is required")
+	ErrInvalidOwnerID        = errors.New("invalid owner id")
+	ErrInvalidClusterName    = errors.New("cluster name is required")
+	ErrInvalidClusterRole    = errors.New("invalid cluster role")
+	ErrCannotChangeOwnerRole = errors.New("cannot change owner role")
+	ErrInvalidTargetUserID   = errors.New("invalid target user id")
+	ErrClusterRoleSelfAssign = errors.New("cannot assign delegated role to cluster owner")
+	ErrInvalidTargetEmail    = errors.New("invalid target email")
 )
 
 type ClusterService interface {
@@ -22,18 +27,30 @@ type ClusterService interface {
 	DeleteCluster(ctx context.Context, ownerID int64, clusterID string) error
 	AssignAgentToCluster(ctx context.Context, ownerID int64, clusterID string, agentID string) error
 	UpdateClusterMetadataFromAgent(ctx context.Context, agentID string, payload model.ClusterPayload) error
-	ListClustersByOwnerID(ctx context.Context, ownerID int64) ([]model.ClusterView, error)
+	ListAccessibleClusters(ctx context.Context, userID int64) ([]model.ClusterView, error)
+	UpsertClusterUserRole(ctx context.Context, ownerID int64, clusterID string, email string, role model.ClusterRole) error
+	DeleteClusterUserRole(ctx context.Context, ownerID int64, clusterID string, targetUserID int64) error
+	ListClusterUserRoles(ctx context.Context, ownerID int64, clusterID string) ([]model.ClusterUserRole, error)
 }
 
 type clusterService struct {
-	clusterRepo repository.ClusterRepository
-	agentRepo   repository.AgentRepository
+	clusterRepo         repository.ClusterRepository
+	agentRepo           repository.AgentRepository
+	clusterUserRoleRepo repository.ClusterUserRoleRepository
+	userRepo            *repository.UserRepository
 }
 
-func NewClusterService(clusterRepo repository.ClusterRepository, agentRepo repository.AgentRepository) ClusterService {
+func NewClusterService(
+	clusterRepo repository.ClusterRepository,
+	agentRepo repository.AgentRepository,
+	clusterUserRoleRepo repository.ClusterUserRoleRepository,
+	userRepo *repository.UserRepository,
+) ClusterService {
 	return &clusterService{
-		clusterRepo: clusterRepo,
-		agentRepo:   agentRepo,
+		clusterRepo:         clusterRepo,
+		agentRepo:           agentRepo,
+		clusterUserRoleRepo: clusterUserRoleRepo,
+		userRepo:            userRepo,
 	}
 }
 
@@ -108,6 +125,7 @@ func (s *clusterService) CreateCluster(ctx context.Context, ownerID int64, req m
 		APIServerHost:   cluster.APIServerHost,
 		LastHeartbeatAt: nil,
 		Status:          model.AgentStatusNeverConnected,
+		MyRole:          string(EffectiveClusterRoleAdmin),
 	}, nil
 }
 
@@ -135,8 +153,12 @@ func (s *clusterService) AssignAgentToCluster(ctx context.Context, ownerID int64
 	return s.clusterRepo.AssignAgent(ctx, clusterID, ownerID, agentID, time.Now().UTC())
 }
 
-func (s *clusterService) ListClustersByOwnerID(ctx context.Context, ownerID int64) ([]model.ClusterView, error) {
-	rows, err := s.clusterRepo.ListByOwnerID(ctx, ownerID)
+func (s *clusterService) ListAccessibleClusters(ctx context.Context, userID int64) ([]model.ClusterView, error) {
+	if userID <= 0 {
+		return nil, ErrInvalidOwnerID
+	}
+
+	rows, err := s.clusterRepo.ListAccessibleByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -171,8 +193,110 @@ func (s *clusterService) ListClustersByOwnerID(ctx context.Context, ownerID int6
 			APIServerHost:   row.APIServerHost,
 			LastHeartbeatAt: row.LastHeartbeatAt,
 			Status:          status,
+			MyRole:          row.MyRole,
 		})
 	}
 
 	return clusters, nil
+}
+
+func (s *clusterService) UpsertClusterUserRole(
+	ctx context.Context,
+	ownerID int64,
+	clusterID string,
+	email string,
+	role model.ClusterRole,
+) error {
+	clusterID = strings.TrimSpace(clusterID)
+	email = strings.TrimSpace(strings.ToLower(email))
+
+	if ownerID <= 0 {
+		return ErrInvalidOwnerID
+	}
+	if clusterID == "" {
+		return errors.New("cluster id is required")
+	}
+	if email == "" {
+		return ErrInvalidTargetEmail
+	}
+	if !isValidClusterRole(role) {
+		return ErrInvalidClusterRole
+	}
+
+	cluster, err := s.clusterRepo.GetByIDAndOwnerID(ctx, clusterID, ownerID)
+	if err != nil {
+		return err
+	}
+
+	targetUser, err := s.userRepo.GetByEmail(ctx, email)
+	if err != nil {
+		return err
+	}
+
+	if cluster.OwnerID == targetUser.ID {
+		return ErrClusterRoleSelfAssign
+	}
+
+	return s.clusterUserRoleRepo.Upsert(ctx, clusterID, targetUser.ID, role, time.Now().UTC())
+}
+
+func (s *clusterService) DeleteClusterUserRole(
+	ctx context.Context,
+	ownerID int64,
+	clusterID string,
+	targetUserID int64,
+) error {
+	clusterID = strings.TrimSpace(clusterID)
+
+	if ownerID <= 0 {
+		return ErrInvalidOwnerID
+	}
+	if clusterID == "" {
+		return errors.New("cluster id is required")
+	}
+	if targetUserID <= 0 {
+		return ErrInvalidTargetUserID
+	}
+
+	cluster, err := s.clusterRepo.GetByIDAndOwnerID(ctx, clusterID, ownerID)
+	if err != nil {
+		return err
+	}
+
+	if cluster.OwnerID == targetUserID {
+		return ErrCannotChangeOwnerRole
+	}
+
+	return s.clusterUserRoleRepo.Delete(ctx, clusterID, targetUserID)
+}
+
+func (s *clusterService) ListClusterUserRoles(
+	ctx context.Context,
+	ownerID int64,
+	clusterID string,
+) ([]model.ClusterUserRole, error) {
+	clusterID = strings.TrimSpace(clusterID)
+
+	if ownerID <= 0 {
+		return nil, ErrInvalidOwnerID
+	}
+	if clusterID == "" {
+		return nil, errors.New("cluster id is required")
+	}
+
+	_, err := s.clusterRepo.GetByIDAndOwnerID(ctx, clusterID, ownerID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.clusterUserRoleRepo.ListByCluster(ctx, clusterID)
+}
+
+func isValidClusterRole(role model.ClusterRole) bool {
+	switch role {
+	case model.ClusterRoleOperator, model.ClusterRoleViewer:
+		return true
+	default:
+		return false
+	}
 }

@@ -21,9 +21,8 @@ type InventoryRepository interface {
 	InsertContainers(ctx context.Context, items []model.ContainerInventory) error
 	InsertContainerStatuses(ctx context.Context, items []model.ContainerStatusInventory) error
 
-	GetLatestSnapshotForOwner(
+	GetLatestSnapshotByClusterID(
 		ctx context.Context,
-		ownerID int64,
 		clusterID string,
 	) (*model.InventorySnapshot, error)
 
@@ -400,30 +399,26 @@ func (r *inventoryRepository) InsertContainerStatuses(ctx context.Context, items
 	return nil
 }
 
-func (r *inventoryRepository) GetLatestSnapshotForOwner(
+func (r *inventoryRepository) GetLatestSnapshotByClusterID(
 	ctx context.Context,
-	ownerID int64,
 	clusterID string,
 ) (*model.InventorySnapshot, error) {
 	query := `
 		SELECT
-			s.id,
-			s.cluster_id,
-			s.collected_at,
-			s.received_at,
-			s.created_at,
-			s.revision_hash
-		FROM inventory_snapshots s
-		JOIN agent_clusters ac
-			ON ac.id = s.cluster_id
-		WHERE s.cluster_id = $1
-		  AND ac.owner_id = $2
-		ORDER BY s.collected_at DESC, s.created_at DESC
+			id,
+			cluster_id,
+			collected_at,
+			received_at,
+			created_at,
+			revision_hash
+		FROM inventory_snapshots
+		WHERE cluster_id = $1
+		ORDER BY collected_at DESC, created_at DESC
 		LIMIT 1
 	`
 
 	var snapshot model.InventorySnapshot
-	err := r.pool.QueryRow(ctx, query, clusterID, ownerID).Scan(
+	err := r.pool.QueryRow(ctx, query, clusterID).Scan(
 		&snapshot.ID,
 		&snapshot.ClusterID,
 		&snapshot.CollectedAt,

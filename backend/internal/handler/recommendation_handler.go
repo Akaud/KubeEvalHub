@@ -37,7 +37,6 @@ func (h *RecommendationHandler) GetRightSizingRecommendations(w http.ResponseWri
 
 	resp, err := h.analysisService.GetRightSizingRecommendations(
 		r.Context(),
-		req.OwnerID,
 		req.ClusterID,
 		req.From,
 		req.To,

@@ -18,16 +18,14 @@ var ErrInvalidAnalysisQuery = errors.New("invalid analysis query")
 type AnalysisService interface {
 	GetWorkloadUtilization(
 		ctx context.Context,
-		ownerID int64,
-		agentID string,
+		clusterID string,
 		from time.Time,
 		to time.Time,
 	) (*model.ClusterUtilizationResponse, error)
 
 	GetOverProvisionedWorkloads(
 		ctx context.Context,
-		ownerID int64,
-		agentID string,
+		clusterID string,
 		from time.Time,
 		to time.Time,
 		thresholds model.OverProvisionThresholds,
@@ -35,8 +33,7 @@ type AnalysisService interface {
 
 	GetUnderProvisionedWorkloads(
 		ctx context.Context,
-		ownerID int64,
-		agentID string,
+		clusterID string,
 		from time.Time,
 		to time.Time,
 		thresholds model.UnderProvisionThresholds,
@@ -44,8 +41,7 @@ type AnalysisService interface {
 
 	GetRightSizingRecommendations(
 		ctx context.Context,
-		ownerID int64,
-		agentID string,
+		clusterID string,
 		from time.Time,
 		to time.Time,
 		thresholds model.RecommendationThresholds,
@@ -54,8 +50,7 @@ type AnalysisService interface {
 
 	GetClusterCapacity(
 		ctx context.Context,
-		ownerID int64,
-		agentID string,
+		clusterID string,
 		from time.Time,
 		to time.Time,
 		recThresholds model.RecommendationThresholds,
@@ -102,19 +97,19 @@ type workloadRequestBucket struct {
 
 func (s *analysisService) GetWorkloadUtilization(
 	ctx context.Context,
-	ownerID int64,
-	agentID string,
+	clusterID string,
 	from time.Time,
 	to time.Time,
 ) (*model.ClusterUtilizationResponse, error) {
-	if ownerID <= 0 || strings.TrimSpace(agentID) == "" {
+	clusterID = strings.TrimSpace(clusterID)
+	if clusterID == "" {
 		return nil, ErrInvalidAnalysisQuery
 	}
 	if from.IsZero() || to.IsZero() || to.Before(from) {
 		return nil, ErrInvalidAnalysisQuery
 	}
 
-	rows, err := s.metricRepo.GetClusterMetricSamples(ctx, ownerID, agentID, from, to)
+	rows, err := s.metricRepo.GetClusterMetricSamples(ctx, clusterID, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +148,7 @@ func (s *analysisService) GetWorkloadUtilization(
 	})
 
 	return &model.ClusterUtilizationResponse{
-		ClusterID: agentID,
+		ClusterID: clusterID,
 		From:      from,
 		To:        to,
 		Items:     items,
@@ -162,13 +157,13 @@ func (s *analysisService) GetWorkloadUtilization(
 
 func (s *analysisService) GetOverProvisionedWorkloads(
 	ctx context.Context,
-	ownerID int64,
-	agentID string,
+	clusterID string,
 	from time.Time,
 	to time.Time,
 	thresholds model.OverProvisionThresholds,
 ) (*model.OverProvisionResponse, error) {
-	if ownerID <= 0 || strings.TrimSpace(agentID) == "" {
+	clusterID = strings.TrimSpace(clusterID)
+	if clusterID == "" {
 		return nil, ErrInvalidAnalysisQuery
 	}
 	if from.IsZero() || to.IsZero() || to.Before(from) {
@@ -177,7 +172,7 @@ func (s *analysisService) GetOverProvisionedWorkloads(
 
 	thresholds = normalizeOverProvisionThresholds(thresholds)
 
-	rows, err := s.metricRepo.GetClusterMetricSamples(ctx, ownerID, agentID, from, to)
+	rows, err := s.metricRepo.GetClusterMetricSamples(ctx, clusterID, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +181,7 @@ func (s *analysisService) GetOverProvisionedWorkloads(
 	usageGrouped := groupUsageRows(rows)
 	log.Printf("GetOverProvisionedWorkloads usageGrouped=%d", len(usageGrouped))
 
-	snapshot, err := s.inventoryRepo.GetLatestSnapshotForOwner(ctx, ownerID, agentID)
+	snapshot, err := s.inventoryRepo.GetLatestSnapshotByClusterID(ctx, clusterID)
 	if err != nil {
 		return nil, err
 	}
@@ -315,7 +310,7 @@ func (s *analysisService) GetOverProvisionedWorkloads(
 	log.Printf("GetOverProvisionedWorkloads final items=%d", len(items))
 
 	return &model.OverProvisionResponse{
-		ClusterID:  agentID,
+		ClusterID:  clusterID,
 		From:       from,
 		To:         to,
 		Thresholds: thresholds,
@@ -546,13 +541,13 @@ type workloadRuntimeBucket struct {
 
 func (s *analysisService) GetUnderProvisionedWorkloads(
 	ctx context.Context,
-	ownerID int64,
-	agentID string,
+	clusterID string,
 	from time.Time,
 	to time.Time,
 	thresholds model.UnderProvisionThresholds,
 ) (*model.UnderProvisionResponse, error) {
-	if ownerID <= 0 || strings.TrimSpace(agentID) == "" {
+	clusterID = strings.TrimSpace(clusterID)
+	if clusterID == "" {
 		return nil, ErrInvalidAnalysisQuery
 	}
 	if from.IsZero() || to.IsZero() || to.Before(from) {
@@ -561,7 +556,7 @@ func (s *analysisService) GetUnderProvisionedWorkloads(
 
 	thresholds = normalizeUnderProvisionThresholds(thresholds)
 
-	rows, err := s.metricRepo.GetClusterMetricSamples(ctx, ownerID, agentID, from, to)
+	rows, err := s.metricRepo.GetClusterMetricSamples(ctx, clusterID, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -570,7 +565,7 @@ func (s *analysisService) GetUnderProvisionedWorkloads(
 	usageGrouped := groupUsageRows(rows)
 	log.Printf("GetUnderProvisionedWorkloads usageGrouped=%d", len(usageGrouped))
 
-	snapshot, err := s.inventoryRepo.GetLatestSnapshotForOwner(ctx, ownerID, agentID)
+	snapshot, err := s.inventoryRepo.GetLatestSnapshotByClusterID(ctx, clusterID)
 	if err != nil {
 		return nil, err
 	}
@@ -727,7 +722,7 @@ func (s *analysisService) GetUnderProvisionedWorkloads(
 	log.Printf("GetUnderProvisionedWorkloads final items=%d", len(items))
 
 	return &model.UnderProvisionResponse{
-		ClusterID:  agentID,
+		ClusterID:  clusterID,
 		From:       from,
 		To:         to,
 		Thresholds: thresholds,
@@ -856,14 +851,14 @@ func groupWorkloadRuntimeSignals(
 
 func (s *analysisService) GetRightSizingRecommendations(
 	ctx context.Context,
-	ownerID int64,
-	agentID string,
+	clusterID string,
 	from time.Time,
 	to time.Time,
 	thresholds model.RecommendationThresholds,
 	underThresholds model.UnderProvisionThresholds,
 ) (*model.RecommendationResponse, error) {
-	if ownerID <= 0 || strings.TrimSpace(agentID) == "" {
+	clusterID = strings.TrimSpace(clusterID)
+	if clusterID == "" {
 		return nil, ErrInvalidAnalysisQuery
 	}
 	if from.IsZero() || to.IsZero() || to.Before(from) {
@@ -873,13 +868,13 @@ func (s *analysisService) GetRightSizingRecommendations(
 	thresholds = normalizeRecommendationThresholds(thresholds)
 	underThresholds = normalizeUnderProvisionThresholds(underThresholds)
 
-	rows, err := s.metricRepo.GetClusterMetricSamples(ctx, ownerID, agentID, from, to)
+	rows, err := s.metricRepo.GetClusterMetricSamples(ctx, clusterID, from, to)
 	if err != nil {
 		return nil, err
 	}
 	usageGrouped := groupUsageRows(rows)
 
-	snapshot, err := s.inventoryRepo.GetLatestSnapshotForOwner(ctx, ownerID, agentID)
+	snapshot, err := s.inventoryRepo.GetLatestSnapshotByClusterID(ctx, clusterID)
 	if err != nil {
 		return nil, err
 	}
@@ -1000,7 +995,7 @@ func (s *analysisService) GetRightSizingRecommendations(
 	})
 
 	return &model.RecommendationResponse{
-		ClusterID:  agentID,
+		ClusterID:  clusterID,
 		From:       from,
 		To:         to,
 		Thresholds: thresholds,
@@ -1107,14 +1102,14 @@ func maxInt64(a, b int64) int64 {
 
 func (s *analysisService) GetClusterCapacity(
 	ctx context.Context,
-	ownerID int64,
-	agentID string,
+	clusterID string,
 	from time.Time,
 	to time.Time,
 	recThresholds model.RecommendationThresholds,
 	underThresholds model.UnderProvisionThresholds,
 ) (*model.ClusterCapacityResponse, error) {
-	if ownerID <= 0 || strings.TrimSpace(agentID) == "" {
+	clusterID = strings.TrimSpace(clusterID)
+	if clusterID == "" {
 		return nil, ErrInvalidAnalysisQuery
 	}
 	if from.IsZero() || to.IsZero() || to.Before(from) {
@@ -1123,8 +1118,7 @@ func (s *analysisService) GetClusterCapacity(
 
 	recs, err := s.GetRightSizingRecommendations(
 		ctx,
-		ownerID,
-		agentID,
+		clusterID,
 		from,
 		to,
 		recThresholds,
@@ -1195,7 +1189,7 @@ func (s *analysisService) GetClusterCapacity(
 	})
 
 	return &model.ClusterCapacityResponse{
-		ClusterID: agentID,
+		ClusterID: clusterID,
 		From:      from,
 		To:        to,
 

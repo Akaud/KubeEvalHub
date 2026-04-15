@@ -44,7 +44,6 @@ func (h *OverProvisionHandler) GetOverProvisionedWorkloads(w http.ResponseWriter
 
 	resp, err := h.analysisService.GetOverProvisionedWorkloads(
 		r.Context(),
-		req.OwnerID,
 		req.ClusterID,
 		req.From,
 		req.To,

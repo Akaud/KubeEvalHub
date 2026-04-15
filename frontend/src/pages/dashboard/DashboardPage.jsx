@@ -49,6 +49,15 @@ export default function DashboardPage() {
   const [selectedAgentByCluster, setSelectedAgentByCluster] = useState({})
   const [deletingClusterId, setDeletingClusterId] = useState('')
 
+  const [clusterRolesByCluster, setClusterRolesByCluster] = useState({})
+  const [roleEmailByCluster, setRoleEmailByCluster] = useState({})
+  const [roleValueByCluster, setRoleValueByCluster] = useState({})
+  const [roleErrorByCluster, setRoleErrorByCluster] = useState({})
+  const [isLoadingRolesByCluster, setIsLoadingRolesByCluster] = useState({})
+  const [isSavingRoleByCluster, setIsSavingRoleByCluster] = useState({})
+  const [removingRoleKey, setRemovingRoleKey] = useState('')
+  const [expandedAccessByCluster, setExpandedAccessByCluster] = useState({})
+
   const { isAuthenticated, isReady } = useAuth()
   const navigate = useNavigate()
 
@@ -200,6 +209,16 @@ kubectl -n ${namespace} rollout status deployment/kubeevalhub-agent`
 
         return next
       })
+
+      setRoleValueByCluster((prev) => {
+        const next = { ...prev }
+        nextClusters.forEach((cluster) => {
+          if (!(cluster.id in next)) {
+            next[cluster.id] = 'viewer'
+          }
+        })
+        return next
+      })
     } catch (error) {
       setClustersError(error.message || 'Failed to load clusters.')
     } finally {
@@ -258,6 +277,122 @@ kubectl -n ${namespace} rollout status deployment/kubeevalhub-agent`
     loadClusters()
     loadAgents()
   }, [isReady, isAuthenticated])
+
+  const loadClusterRoles = async (clusterId) => {
+    setIsLoadingRolesByCluster((prev) => ({ ...prev, [clusterId]: true }))
+    setRoleErrorByCluster((prev) => ({ ...prev, [clusterId]: '' }))
+
+    try {
+      const response = await apiFetch(`/api/clusters/${clusterId}/roles`)
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to load cluster access.')
+      }
+
+      setClusterRolesByCluster((prev) => ({
+        ...prev,
+        [clusterId]: Array.isArray(data) ? data : [],
+      }))
+    } catch (error) {
+      setRoleErrorByCluster((prev) => ({
+        ...prev,
+        [clusterId]: error.message || 'Failed to load cluster access.',
+      }))
+    } finally {
+      setIsLoadingRolesByCluster((prev) => ({ ...prev, [clusterId]: false }))
+    }
+  }
+
+  const toggleAccessPanel = async (clusterId) => {
+    const isExpanded = Boolean(expandedAccessByCluster[clusterId])
+
+    if (isExpanded) {
+      setExpandedAccessByCluster((prev) => ({ ...prev, [clusterId]: false }))
+      return
+    }
+
+    setExpandedAccessByCluster((prev) => ({ ...prev, [clusterId]: true }))
+
+    if (!clusterRolesByCluster[clusterId]) {
+      await loadClusterRoles(clusterId)
+    }
+  }
+
+  const handleGrantClusterAccess = async (clusterId) => {
+    const email = String(roleEmailByCluster[clusterId] || '').trim().toLowerCase()
+    const role = roleValueByCluster[clusterId] || 'viewer'
+
+    if (!email) {
+      setRoleErrorByCluster((prev) => ({
+        ...prev,
+        [clusterId]: 'Email is required.',
+      }))
+      return
+    }
+
+    setIsSavingRoleByCluster((prev) => ({ ...prev, [clusterId]: true }))
+    setRoleErrorByCluster((prev) => ({ ...prev, [clusterId]: '' }))
+
+    try {
+      const response = await apiFetch(`/api/clusters/${clusterId}/roles`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          role,
+        }),
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to grant cluster access.')
+      }
+
+      setRoleEmailByCluster((prev) => ({ ...prev, [clusterId]: '' }))
+      await loadClusterRoles(clusterId)
+    } catch (error) {
+      setRoleErrorByCluster((prev) => ({
+        ...prev,
+        [clusterId]: error.message || 'Failed to grant cluster access.',
+      }))
+    } finally {
+      setIsSavingRoleByCluster((prev) => ({ ...prev, [clusterId]: false }))
+    }
+  }
+
+  const handleRemoveClusterAccess = async (clusterId, userId) => {
+    const key = `${clusterId}:${userId}`
+    setRemovingRoleKey(key)
+    setRoleErrorByCluster((prev) => ({ ...prev, [clusterId]: '' }))
+
+    try {
+      const response = await apiFetch(`/api/clusters/${clusterId}/roles/${userId}`, {
+        method: 'DELETE',
+      })
+
+      let data = null
+      if (response.status !== 204) {
+        data = await response.json().catch(() => null)
+      }
+
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to remove cluster access.')
+      }
+
+      await loadClusterRoles(clusterId)
+    } catch (error) {
+      setRoleErrorByCluster((prev) => ({
+        ...prev,
+        [clusterId]: error.message || 'Failed to remove cluster access.',
+      }))
+    } finally {
+      setRemovingRoleKey('')
+    }
+  }
 
   const openCreateClusterModal = () => {
     setClusterName('')
@@ -461,6 +596,12 @@ kubectl -n ${namespace} rollout status deployment/kubeevalhub-agent`
         delete next[clusterId]
         return next
       })
+
+      setClusterRolesByCluster((prev) => {
+        const next = { ...prev }
+        delete next[clusterId]
+        return next
+      })
     } catch (error) {
       setClustersError(error.message || 'Failed to delete cluster.')
     } finally {
@@ -608,7 +749,7 @@ kubectl -n ${namespace} rollout status deployment/kubeevalhub-agent`
       <div className="dashboard-header">
         <div>
           <h1>Dashboard</h1>
-          <p>Create clusters, create agents, assign them, and inspect cluster data.</p>
+          <p>Create clusters, create agents, assign them, inspect cluster data, and manage access.</p>
         </div>
 
         <button
@@ -667,7 +808,7 @@ kubectl -n ${namespace} rollout status deployment/kubeevalhub-agent`
           <div className="agents-panel-header">
             <div>
               <h3>Clusters</h3>
-              <p>Assign agents and access cluster data.</p>
+              <p>Assign agents, access data, and manage delegated access.</p>
             </div>
           </div>
 
@@ -687,6 +828,17 @@ kubectl -n ${namespace} rollout status deployment/kubeevalhub-agent`
                 const assignedAgentName = isAssigned
                   ? agents.find((agent) => agent.id === cluster.agentId)?.name || cluster.agentId
                   : 'Unassigned'
+
+                const myRole = cluster.myRole || 'none'
+                const canManageCluster = myRole === 'admin'
+                const canUseAnalysis = myRole === 'admin' || myRole === 'operator'
+                const canViewReadOnly = myRole === 'admin' || myRole === 'operator' || myRole === 'viewer'
+
+                const clusterRoles = clusterRolesByCluster[cluster.id] || []
+                const roleError = roleErrorByCluster[cluster.id] || ''
+                const isLoadingRoles = Boolean(isLoadingRolesByCluster[cluster.id])
+                const isSavingRole = Boolean(isSavingRoleByCluster[cluster.id])
+                const isAccessExpanded = Boolean(expandedAccessByCluster[cluster.id])
 
                 return (
                   <div key={cluster.id} className="agent-list-item">
@@ -727,6 +879,11 @@ kubectl -n ${namespace} rollout status deployment/kubeevalhub-agent`
                               : 'Never'}
                           </strong>
                         </div>
+
+                        <div className="cluster-meta-row">
+                          <span>My access</span>
+                          <strong>{myRole}</strong>
+                        </div>
                       </div>
                     </div>
 
@@ -747,75 +904,198 @@ kubectl -n ${namespace} rollout status deployment/kubeevalhub-agent`
                         </div>
                       </div>
 
-                      <div className="assignment-card">
-                        <div className="assignment-card-header">
-                          <div>
-                            <h5>Agent assignment</h5>
-                            <p>
-                              {isAssigned
-                                ? 'Change the connected agent for this cluster.'
-                                : 'Select an available agent to connect this cluster.'}
-                            </p>
+                      {canManageCluster && (
+                        <div className="assignment-card">
+                          <div className="assignment-card-header">
+                            <div>
+                              <h5>Agent assignment</h5>
+                              <p>
+                                {isAssigned
+                                  ? 'Change the connected agent for this cluster.'
+                                  : 'Select an available agent to connect this cluster.'}
+                              </p>
+                            </div>
                           </div>
-                        </div>
 
-                        <div className="assignment-current">
-                          <span className="assignment-current-label">Current</span>
-                          <span className="assignment-current-value">
-                            {assignedAgentName}
-                          </span>
-                        </div>
+                          <div className="assignment-current">
+                            <span className="assignment-current-label">Current</span>
+                            <span className="assignment-current-value">
+                              {assignedAgentName}
+                            </span>
+                          </div>
 
-                        <div className="assignment-controls">
-                          <label className="assignment-select-group">
-                            <span>Select agent</span>
-                            <select
-                              className="assignment-select"
-                              value={selectedAgentId}
-                              onChange={(e) =>
-                                setSelectedAgentByCluster((prev) => ({
-                                  ...prev,
-                                  [cluster.id]: e.target.value,
-                                }))
-                              }
+                          <div className="assignment-controls">
+                            <label className="assignment-select-group">
+                              <span>Select agent</span>
+                              <select
+                                className="assignment-select"
+                                value={selectedAgentId}
+                                onChange={(e) =>
+                                  setSelectedAgentByCluster((prev) => ({
+                                    ...prev,
+                                    [cluster.id]: e.target.value,
+                                  }))
+                                }
+                                disabled={
+                                  assigningClusterId === cluster.id || deletingClusterId === cluster.id
+                                }
+                              >
+                                <option value="">Select agent</option>
+                                {assignableAgents.map((agent) => (
+                                  <option key={agent.id} value={agent.id}>
+                                    {agent.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <button
+                              type="button"
+                              className="primary-button assignment-button"
+                              onClick={() => handleAssignAgent(cluster.id)}
                               disabled={
-                                assigningClusterId === cluster.id || deletingClusterId === cluster.id
+                                !selectedAgentId ||
+                                assigningClusterId === cluster.id ||
+                                deletingClusterId === cluster.id
                               }
                             >
-                              <option value="">Select agent</option>
-                              {assignableAgents.map((agent) => (
-                                <option key={agent.id} value={agent.id}>
-                                  {agent.name}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-
-                          <button
-                            type="button"
-                            className="primary-button assignment-button"
-                            onClick={() => handleAssignAgent(cluster.id)}
-                            disabled={
-                              !selectedAgentId ||
-                              assigningClusterId === cluster.id ||
-                              deletingClusterId === cluster.id
-                            }
-                          >
-                            {assigningClusterId === cluster.id
-                              ? 'Assigning...'
-                              : isAssigned
-                                ? 'Update assignment'
-                                : 'Assign agent'}
-                          </button>
+                              {assigningClusterId === cluster.id
+                                ? 'Assigning...'
+                                : isAssigned
+                                  ? 'Update assignment'
+                                  : 'Assign agent'}
+                            </button>
+                          </div>
                         </div>
-                      </div>
+                      )}
+
+                      {canManageCluster && (
+                        <div className="assignment-card">
+                          <div className="assignment-card-header">
+                            <div>
+                              <h5>Cluster access</h5>
+                              <p>Grant another user viewer or operator access to this cluster.</p>
+                            </div>
+                          </div>
+
+                          <div className="assignment-controls">
+                            <label className="assignment-select-group">
+                              <span>User email</span>
+                              <input
+                                type="email"
+                                value={roleEmailByCluster[cluster.id] || ''}
+                                onChange={(e) =>
+                                  setRoleEmailByCluster((prev) => ({
+                                    ...prev,
+                                    [cluster.id]: e.target.value,
+                                  }))
+                                }
+                                placeholder="Enter user email"
+                                disabled={isSavingRole || deletingClusterId === cluster.id}
+                              />
+                            </label>
+
+                            <label className="assignment-select-group">
+                              <span>Role</span>
+                              <select
+                                className="assignment-select"
+                                value={roleValueByCluster[cluster.id] || 'viewer'}
+                                onChange={(e) =>
+                                  setRoleValueByCluster((prev) => ({
+                                    ...prev,
+                                    [cluster.id]: e.target.value,
+                                  }))
+                                }
+                                disabled={isSavingRole || deletingClusterId === cluster.id}
+                              >
+                                <option value="viewer">viewer</option>
+                                <option value="operator">operator</option>
+                              </select>
+                            </label>
+
+                            <button
+                              type="button"
+                              className="primary-button assignment-button"
+                              onClick={() => handleGrantClusterAccess(cluster.id)}
+                              disabled={isSavingRole || deletingClusterId === cluster.id}
+                            >
+                              {isSavingRole ? 'Saving...' : 'Grant access'}
+                            </button>
+                          </div>
+
+                          <div className="cluster-actions">
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => toggleAccessPanel(cluster.id)}
+                              disabled={isSavingRole}
+                            >
+                              {isAccessExpanded ? 'Hide access list' : 'Show access list'}
+                            </button>
+                          </div>
+
+                          {roleError && <div className="form-error">{roleError}</div>}
+
+                          {isAccessExpanded && (
+                            <div className="cluster-access-list">
+                              {isLoadingRoles ? (
+                                <p>Loading access...</p>
+                              ) : clusterRoles.length === 0 ? (
+                                <p>No delegated access configured.</p>
+                              ) : (
+                                <div className="agents-list">
+                                  {clusterRoles.map((accessItem) => {
+                                    const removeKey = `${cluster.id}:${accessItem.userId}`
+
+                                    return (
+                                      <div key={`${accessItem.clusterId}:${accessItem.userId}`} className="agent-list-item">
+                                        <div className="agent-list-main">
+                                          <div className="cluster-meta-list">
+                                            <div className="cluster-meta-row">
+                                              <span>User ID</span>
+                                              <strong>{accessItem.userId}</strong>
+                                            </div>
+                                            <div className="cluster-meta-row">
+                                              <span>Role</span>
+                                              <strong>{accessItem.role}</strong>
+                                            </div>
+                                            <div className="cluster-meta-row">
+                                              <span>Granted at</span>
+                                              <strong>
+                                                {accessItem.createdAt
+                                                  ? new Date(accessItem.createdAt).toLocaleString()
+                                                  : 'Unknown'}
+                                              </strong>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        <div className="agent-list-side">
+                                          <button
+                                            type="button"
+                                            className="secondary-button"
+                                            onClick={() => handleRemoveClusterAccess(cluster.id, accessItem.userId)}
+                                            disabled={removingRoleKey === removeKey}
+                                          >
+                                            {removingRoleKey === removeKey ? 'Removing...' : 'Remove'}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       <div className="cluster-actions cluster-actions-grid">
                         <button
                           type="button"
                           className="dashboard-nav-button"
                           onClick={() => handleShowInventory(cluster.id)}
-                          disabled={!isAssigned}
+                          disabled={!isAssigned || !canViewReadOnly}
                         >
                           Show inventory
                         </button>
@@ -824,7 +1104,7 @@ kubectl -n ${namespace} rollout status deployment/kubeevalhub-agent`
                           type="button"
                           className="dashboard-nav-button"
                           onClick={() => handleShowRecommendations(cluster.id)}
-                          disabled={!isAssigned}
+                          disabled={!isAssigned || !canUseAnalysis}
                         >
                           Show recommendations
                         </button>
@@ -833,19 +1113,21 @@ kubectl -n ${namespace} rollout status deployment/kubeevalhub-agent`
                           type="button"
                           className="dashboard-nav-button is-primary"
                           onClick={() => handleShowMetrics(cluster.id)}
-                          disabled={!isAssigned}
+                          disabled={!isAssigned || !canViewReadOnly}
                         >
                           Show metrics
                         </button>
 
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => handleDeleteCluster(cluster.id, cluster.clusterName)}
-                          disabled={deletingClusterId === cluster.id || assigningClusterId === cluster.id}
-                        >
-                          {deletingClusterId === cluster.id ? 'Deleting...' : 'Delete cluster'}
-                        </button>
+                        {canManageCluster && (
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => handleDeleteCluster(cluster.id, cluster.clusterName)}
+                            disabled={deletingClusterId === cluster.id || assigningClusterId === cluster.id}
+                          >
+                            {deletingClusterId === cluster.id ? 'Deleting...' : 'Delete cluster'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>

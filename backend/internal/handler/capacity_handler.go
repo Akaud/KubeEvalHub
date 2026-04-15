@@ -35,7 +35,6 @@ func (h *CapacityHandler) GetClusterCapacity(w http.ResponseWriter, r *http.Requ
 
 	resp, err := h.analysisService.GetClusterCapacity(
 		r.Context(),
-		req.OwnerID,
 		req.ClusterID,
 		req.From,
 		req.To,

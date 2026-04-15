@@ -25,14 +25,12 @@ type MetricService interface {
 	IngestMetrics(ctx context.Context, agentID string, req *model.PushMetricsRequest) error
 	GetClusterMetrics(
 		ctx context.Context,
-		ownerID int64,
 		clusterID string,
 		from time.Time,
 		to time.Time,
 	) (*model.ClusterMetricsResponse, error)
 	ForecastClusterMetric(
 		ctx context.Context,
-		ownerID int64,
 		clusterID string,
 		req *model.ForecastRequest,
 	) (*model.ForecastResponse, error)
@@ -84,7 +82,6 @@ func (s *metricService) IngestMetrics(ctx context.Context, agentID string, req *
 
 	incomingClusterUID := strings.TrimSpace(req.Cluster.ClusterUID)
 
-	// Only enforce UID match if cluster already has a discovered UID.
 	if strings.TrimSpace(cluster.ClusterUID) != "" && cluster.ClusterUID != incomingClusterUID {
 		return ErrClusterUIDMismatch
 	}
@@ -183,20 +180,19 @@ func stringPtrOrNil(v string) *string {
 
 func (s *metricService) GetClusterMetrics(
 	ctx context.Context,
-	ownerID int64,
 	clusterID string,
 	from time.Time,
 	to time.Time,
 ) (*model.ClusterMetricsResponse, error) {
 	clusterID = strings.TrimSpace(clusterID)
-	if ownerID <= 0 || clusterID == "" {
+	if clusterID == "" {
 		return nil, ErrInvalidMetricsPayload
 	}
 	if from.IsZero() || to.IsZero() || to.Before(from) {
 		return nil, ErrInvalidMetricsPayload
 	}
 
-	rows, err := s.metricRepo.GetClusterMetricSamples(ctx, ownerID, clusterID, from, to)
+	rows, err := s.metricRepo.GetClusterMetricSamples(ctx, clusterID, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -251,12 +247,11 @@ func (s *metricService) GetClusterMetrics(
 
 func (s *metricService) ForecastClusterMetric(
 	ctx context.Context,
-	ownerID int64,
 	clusterID string,
 	req *model.ForecastRequest,
 ) (*model.ForecastResponse, error) {
 	clusterID = strings.TrimSpace(clusterID)
-	if ownerID <= 0 || clusterID == "" || req == nil {
+	if clusterID == "" || req == nil {
 		return nil, ErrInvalidMetricsPayload
 	}
 
@@ -281,7 +276,7 @@ func (s *metricService) ForecastClusterMetric(
 	)
 
 	if req.SeriesID != "" {
-		series, err = s.metricRepo.GetSeriesByIDForOwner(ctx, ownerID, clusterID, req.SeriesID)
+		series, err = s.metricRepo.GetSeriesByIDForCluster(ctx, clusterID, req.SeriesID)
 	} else {
 		if req.MetricName == "" || req.ResourceKind == "" {
 			return nil, ErrInvalidMetricsPayload
@@ -289,7 +284,6 @@ func (s *metricService) ForecastClusterMetric(
 
 		series, err = s.metricRepo.FindSeriesByIdentity(
 			ctx,
-			ownerID,
 			clusterID,
 			req.MetricName,
 			req.ResourceKind,

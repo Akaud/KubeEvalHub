@@ -11,7 +11,7 @@ metadata:
   namespace: kubeevalhub-agent
 type: Opaque
 stringData:
-  AGENT_TOKEN: "54ca527b34423fe422712b8f521c14bdf799f0c39829926326c049895ec8df42"
+  AGENT_TOKEN: "64fcb31ef3c1c02a263cc3a115507462e4778b5b9384b92cbfab6099bb2e29ca"
 
 ---
 apiVersion: v1

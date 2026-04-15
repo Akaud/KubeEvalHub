@@ -44,7 +44,6 @@ func (h *UnderProvisionHandler) GetUnderProvisionedWorkloads(w http.ResponseWrit
 
 	resp, err := h.analysisService.GetUnderProvisionedWorkloads(
 		r.Context(),
-		req.OwnerID,
 		req.ClusterID,
 		req.From,
 		req.To,

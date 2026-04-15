@@ -15,7 +15,7 @@ import (
 var ErrClusterNotFound = errors.New("cluster not found")
 var ErrClusterAlreadyExists = errors.New("cluster already exists")
 
-type ClusterWithAgentState struct {
+type AccessibleClusterWithAgentState struct {
 	ClusterID       string
 	OwnerID         int64
 	AgentID         *string
@@ -26,16 +26,18 @@ type ClusterWithAgentState struct {
 	APIServerHost   string
 	Enabled         *bool
 	LastHeartbeatAt *time.Time
+	MyRole          string
 }
 
 type ClusterRepository interface {
 	Create(ctx context.Context, cluster *model.AgentCluster) error
 	Upsert(ctx context.Context, cluster *model.AgentCluster) error
 	GetByAgentID(ctx context.Context, agentID string) (*model.AgentCluster, error)
+	GetByID(ctx context.Context, id string) (*model.AgentCluster, error)
 	GetByIDAndOwnerID(ctx context.Context, id string, ownerID int64) (*model.AgentCluster, error)
 	AssignAgent(ctx context.Context, clusterID string, ownerID int64, agentID string, updatedAt time.Time) error
 	UpdateMetadataByAgentID(ctx context.Context, agentID string, clusterUID, clusterName, kubeVersion, distribution, apiServerHost string, updatedAt time.Time) error
-	ListByOwnerID(ctx context.Context, ownerID int64) ([]ClusterWithAgentState, error)
+	ListAccessibleByUserID(ctx context.Context, userID int64) ([]AccessibleClusterWithAgentState, error)
 	Delete(ctx context.Context, id string, ownerID int64) error
 }
 
@@ -46,6 +48,7 @@ type clusterRepository struct {
 func NewClusterRepository(pool *pgxpool.Pool) ClusterRepository {
 	return &clusterRepository{pool: pool}
 }
+
 func (r *clusterRepository) UpdateMetadataByAgentID(
 	ctx context.Context,
 	agentID string,
@@ -121,6 +124,47 @@ func (r *clusterRepository) AssignAgent(ctx context.Context, clusterID string, o
 	}
 
 	return nil
+}
+
+func (r *clusterRepository) GetByID(ctx context.Context, id string) (*model.AgentCluster, error) {
+	query := `
+		SELECT
+			id,
+			owner_id,
+			agent_id,
+			cluster_uid,
+			cluster_name,
+			kube_version,
+			distribution,
+			api_server_host,
+			created_at,
+			updated_at
+		FROM agent_clusters
+		WHERE id = $1
+	`
+
+	var c model.AgentCluster
+
+	err := r.pool.QueryRow(ctx, query, id).Scan(
+		&c.ID,
+		&c.OwnerID,
+		&c.AgentID,
+		&c.ClusterUID,
+		&c.ClusterName,
+		&c.KubeVersion,
+		&c.Distribution,
+		&c.APIServerHost,
+		&c.CreatedAt,
+		&c.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrClusterNotFound
+		}
+		return nil, err
+	}
+
+	return &c, nil
 }
 
 func (r *clusterRepository) GetByIDAndOwnerID(ctx context.Context, id string, ownerID int64) (*model.AgentCluster, error) {
@@ -221,10 +265,10 @@ func (r *clusterRepository) Upsert(ctx context.Context, cluster *model.AgentClus
 			updated_at
 		)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-		ON CONFLICT (cluster_uid)
+		ON CONFLICT (id)
 		DO UPDATE SET
-			owner_id = EXCLUDED.owner_id,
 			agent_id = EXCLUDED.agent_id,
+			cluster_uid = EXCLUDED.cluster_uid,
 			cluster_name = EXCLUDED.cluster_name,
 			kube_version = EXCLUDED.kube_version,
 			distribution = EXCLUDED.distribution,
@@ -247,7 +291,15 @@ func (r *clusterRepository) Upsert(ctx context.Context, cluster *model.AgentClus
 		cluster.UpdatedAt,
 	)
 
-	return err
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return ErrClusterAlreadyExists
+		}
+		return err
+	}
+
+	return nil
 }
 
 func (r *clusterRepository) GetByAgentID(ctx context.Context, agentID string) (*model.AgentCluster, error) {
@@ -291,7 +343,7 @@ func (r *clusterRepository) GetByAgentID(ctx context.Context, agentID string) (*
 	return &c, nil
 }
 
-func (r *clusterRepository) ListByOwnerID(ctx context.Context, ownerID int64) ([]ClusterWithAgentState, error) {
+func (r *clusterRepository) ListAccessibleByUserID(ctx context.Context, userID int64) ([]AccessibleClusterWithAgentState, error) {
 	query := `
 		SELECT
 			ac.id,
@@ -303,23 +355,33 @@ func (r *clusterRepository) ListByOwnerID(ctx context.Context, ownerID int64) ([
 			ac.distribution,
 			ac.api_server_host,
 			a.enabled,
-			a.last_heartbeat_at
+			a.last_heartbeat_at,
+			CASE
+				WHEN ac.owner_id = $1 THEN 'admin'
+				WHEN cur.role IS NOT NULL THEN cur.role
+				ELSE 'none'
+			END AS my_role
 		FROM agent_clusters ac
-		LEFT JOIN agents a ON a.id = ac.agent_id
+		LEFT JOIN agents a
+			ON a.id = ac.agent_id
+		LEFT JOIN cluster_user_roles cur
+			ON cur.cluster_id = ac.id
+		   AND cur.user_id = $1
 		WHERE ac.owner_id = $1
+		   OR cur.user_id = $1
 		ORDER BY ac.created_at DESC
 	`
 
-	rows, err := r.pool.Query(ctx, query, ownerID)
+	rows, err := r.pool.Query(ctx, query, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	clusters := make([]ClusterWithAgentState, 0)
+	clusters := make([]AccessibleClusterWithAgentState, 0)
 
 	for rows.Next() {
-		var c ClusterWithAgentState
+		var c AccessibleClusterWithAgentState
 
 		err := rows.Scan(
 			&c.ClusterID,
@@ -332,6 +394,7 @@ func (r *clusterRepository) ListByOwnerID(ctx context.Context, ownerID int64) ([
 			&c.APIServerHost,
 			&c.Enabled,
 			&c.LastHeartbeatAt,
+			&c.MyRole,
 		)
 		if err != nil {
 			return nil, err

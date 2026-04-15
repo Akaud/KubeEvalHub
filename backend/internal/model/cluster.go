@@ -26,6 +26,7 @@ type ClusterView struct {
 	APIServerHost   string      `json:"apiServerHost"`
 	LastHeartbeatAt *time.Time  `json:"lastHeartbeatAt,omitempty"`
 	Status          AgentStatus `json:"status"`
+	MyRole          string      `json:"myRole"`
 }
 
 type CreateClusterRequest struct {
@@ -42,4 +43,9 @@ type ClusterPayload struct {
 	KubeVersion   string `json:"kubeVersion"`
 	Distribution  string `json:"distribution"`
 	APIServerHost string `json:"apiServerHost"`
+}
+
+type UpsertClusterUserRoleRequest struct {
+	Email string      `json:"email"`
+	Role  ClusterRole `json:"role"`
 }

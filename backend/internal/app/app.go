@@ -33,8 +33,14 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 	agentHandler := handler.NewAgentHandler(agentService)
 
 	clusterRepo := repository.NewClusterRepository(pool)
-	clusterService := service.NewClusterService(clusterRepo, agentRepo)
+	clusterUserRoleRepo := repository.NewClusterUserRoleRepository(pool)
+	clusterService := service.NewClusterService(clusterRepo, agentRepo, clusterUserRoleRepo, userRepo)
 	clusterHandler := handler.NewClusterHandler(clusterService)
+
+	clusterAuthService := service.NewClusterAuthService(clusterRepo, clusterUserRoleRepo)
+	viewerAccess := handler.ClusterRBACMiddleware(clusterAuthService, service.EffectiveClusterRoleViewer)
+	operatorAccess := handler.ClusterRBACMiddleware(clusterAuthService, service.EffectiveClusterRoleOperator)
+	adminAccess := handler.ClusterRBACMiddleware(clusterAuthService, service.EffectiveClusterRoleAdmin)
 
 	metricRepo := repository.NewMetricRepository(pool)
 	metricService := service.NewMetricService(clusterRepo, metricRepo)
@@ -93,18 +99,33 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 		r.Use(jwtAuthMiddleware)
 
 		r.Post("/", clusterHandler.CreateCluster)
-		r.Post("/{id}/assign-agent", clusterHandler.AssignAgentToCluster)
 		r.Get("/", clusterHandler.ListClusters)
-		r.Delete("/{id}", clusterHandler.DeleteCluster)
 
-		r.Get("/{id}/metrics", metricHandler.GetClusterMetrics)
-		r.Get("/{id}/inventory/latest", inventoryHandler.GetLatestInventory)
-		r.Post("/{id}/forecast", metricHandler.ForecastMetric)
-		r.Get("/{id}/analysis/utilization", analysisHandler.GetWorkloadUtilization)
-		r.Get("/{id}/analysis/overprovisioned", overProvisionHandler.GetOverProvisionedWorkloads)
-		r.Get("/{id}/analysis/underprovisioned", underProvisionHandler.GetUnderProvisionedWorkloads)
-		r.Get("/{id}/recommendations", recommendationHandler.GetRightSizingRecommendations)
-		r.Get("/{id}/capacity", capacityHandler.GetClusterCapacity)
+		r.Group(func(r chi.Router) {
+			r.Use(viewerAccess)
+			r.Get("/{id}/metrics", metricHandler.GetClusterMetrics)
+			r.Get("/{id}/inventory/latest", inventoryHandler.GetLatestInventory)
+		})
+
+		r.Group(func(r chi.Router) {
+			r.Use(operatorAccess)
+			r.Post("/{id}/forecast", metricHandler.ForecastMetric)
+			r.Get("/{id}/analysis/utilization", analysisHandler.GetWorkloadUtilization)
+			r.Get("/{id}/analysis/overprovisioned", overProvisionHandler.GetOverProvisionedWorkloads)
+			r.Get("/{id}/analysis/underprovisioned", underProvisionHandler.GetUnderProvisionedWorkloads)
+			r.Get("/{id}/recommendations", recommendationHandler.GetRightSizingRecommendations)
+			r.Get("/{id}/capacity", capacityHandler.GetClusterCapacity)
+		})
+
+		r.Group(func(r chi.Router) {
+			r.Use(adminAccess)
+			r.Post("/{id}/assign-agent", clusterHandler.AssignAgentToCluster)
+			r.Delete("/{id}", clusterHandler.DeleteCluster)
+
+			r.Get("/{id}/roles", clusterHandler.ListClusterUserRoles)
+			r.Put("/{id}/roles", clusterHandler.UpsertClusterUserRole)
+			r.Delete("/{id}/roles/{userId}", clusterHandler.DeleteClusterUserRole)
+		})
 	})
 
 	return &http.Server{

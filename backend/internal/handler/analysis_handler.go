@@ -36,7 +36,6 @@ func (h *AnalysisHandler) GetWorkloadUtilization(w http.ResponseWriter, r *http.
 
 	resp, err := h.analysisService.GetWorkloadUtilization(
 		r.Context(),
-		req.OwnerID,
 		req.ClusterID,
 		req.From,
 		req.To,

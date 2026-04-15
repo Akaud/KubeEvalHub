@@ -59,19 +59,13 @@ func (h *InventoryHandler) IngestInventory(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *InventoryHandler) GetLatestInventory(w http.ResponseWriter, r *http.Request) {
-	ownerID, ok := getAuthenticatedUserID(r)
-	if !ok || ownerID <= 0 {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
-	agentID := chi.URLParam(r, "id")
-	if agentID == "" {
+	clusterID := chi.URLParam(r, "id")
+	if clusterID == "" {
 		writeError(w, http.StatusBadRequest, "invalid cluster id")
 		return
 	}
 
-	resp, err := h.inventoryService.GetLatestInventory(r.Context(), ownerID, agentID)
+	resp, err := h.inventoryService.GetLatestInventory(r.Context(), clusterID)
 	if err != nil {
 		switch {
 		case errors.Is(err, repository.ErrInventorySnapshotNotFound):

@@ -59,12 +59,6 @@ func (h *MetricHandler) IngestMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MetricHandler) GetClusterMetrics(w http.ResponseWriter, r *http.Request) {
-	ownerID, ok := getAuthenticatedUserID(r)
-	if !ok || ownerID <= 0 {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
 	clusterID := chi.URLParam(r, "id")
 	if clusterID == "" {
 		writeError(w, http.StatusBadRequest, "invalid cluster id")
@@ -91,7 +85,7 @@ func (h *MetricHandler) GetClusterMetrics(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	resp, err := h.metricService.GetClusterMetrics(r.Context(), ownerID, clusterID, from, to)
+	resp, err := h.metricService.GetClusterMetrics(r.Context(), clusterID, from, to)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrInvalidMetricsPayload):
@@ -107,15 +101,9 @@ func (h *MetricHandler) GetClusterMetrics(w http.ResponseWriter, r *http.Request
 }
 
 func (h *MetricHandler) ForecastMetric(w http.ResponseWriter, r *http.Request) {
-	ownerID, ok := getAuthenticatedUserID(r)
-	if !ok || ownerID <= 0 {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
-	agentID := chi.URLParam(r, "id")
-	if agentID == "" {
-		writeError(w, http.StatusBadRequest, "invalid agent id")
+	clusterID := chi.URLParam(r, "id")
+	if clusterID == "" {
+		writeError(w, http.StatusBadRequest, "invalid cluster id")
 		return
 	}
 
@@ -125,7 +113,7 @@ func (h *MetricHandler) ForecastMetric(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.metricService.ForecastClusterMetric(r.Context(), ownerID, agentID, &req)
+	resp, err := h.metricService.ForecastClusterMetric(r.Context(), clusterID, &req)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrInvalidMetricsPayload):
