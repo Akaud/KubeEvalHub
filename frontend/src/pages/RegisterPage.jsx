@@ -10,7 +10,6 @@ export default function RegisterPage() {
     email: '',
     password: '',
     confirmPassword: '',
-    consent: false,
   })
 
   const [isEmailValid, setIsEmailValid] = useState(false)
@@ -87,11 +86,6 @@ export default function RegisterPage() {
 
     if (password !== confirmPassword) {
       setError('Passwords do not match')
-      return
-    }
-
-    if (!form.consent) {
-      setError('You must agree to the policy')
       return
     }
 
@@ -203,19 +197,6 @@ export default function RegisterPage() {
         )}
 
         {error && <p className="error-text">{error}</p>}
-
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            name="consent"
-            checked={form.consent}
-            onChange={handleChange}
-            required
-          />
-          <span>
-            I agree to have my data analyzed according to the policy
-          </span>
-        </label>
 
         <button type="submit" disabled={isSubmitting}>
           {isSubmitting ? 'Registering...' : 'Register'}

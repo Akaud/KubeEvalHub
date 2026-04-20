@@ -51,15 +51,8 @@ func (r *Runner) Run(ctx context.Context) error {
 		metricsInterval = time.Minute
 	}
 
-	inventoryInterval := metricsInterval * 10
-	if inventoryInterval < 5*time.Minute {
-		inventoryInterval = 5 * time.Minute
-	}
-
+	inventoryInterval := metricsInterval
 	heartbeatInterval := metricsInterval
-	if heartbeatInterval <= 0 {
-		heartbeatInterval = time.Minute
-	}
 
 	metricsTicker := time.NewTicker(metricsInterval)
 	inventoryTicker := time.NewTicker(inventoryInterval)

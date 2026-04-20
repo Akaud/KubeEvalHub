@@ -12,7 +12,7 @@ import { useAuth } from '../../context/AuthContext'
 import { apiFetch } from '../../utils/apiFetch'
 
 const DEFAULT_NAMESPACE = 'kubeevalhub-agent'
-const DEFAULT_AGENT_IMAGE = 'docker.io/lewaldenko/kubeevalhubagent:1.0.0'
+const DEFAULT_AGENT_IMAGE = 'docker.io/lewaldenko/kubeevalhubagent:1.0.1'
 const DEFAULT_BACKEND_URL = 'http://host.minikube.internal:5000'
 
 export default function DashboardPage() {
@@ -692,25 +692,6 @@ kubectl -n ${namespace} rollout status deployment/kubeevalhub-agent`
     }
   }
 
-  const handleCopyInstallCommand = async () => {
-    const tokenValue = createdAgentResult?.token
-    if (!tokenValue) return
-
-    try {
-      const command = buildInstallCommand({
-        token: tokenValue,
-        scrapeIntervalSeconds: scrapeInterval,
-      })
-
-      await navigator.clipboard.writeText(command)
-      setInstallCommandCopied(true)
-      window.setTimeout(() => setInstallCommandCopied(false), 2000)
-    } catch (error) {
-      setCreateAgentError(error.message || 'Failed to build install command.')
-      setInstallCommandCopied(false)
-    }
-  }
-
   const handleCopyManifest = async () => {
     const tokenValue = createdAgentResult?.token
     if (!tokenValue) return
@@ -1335,7 +1316,7 @@ kubectl -n ${namespace} rollout status deployment/kubeevalhub-agent`
               <div className="created-agent-result">
                 <div className="success-box">
                   <h4>Agent created</h4>
-                  <p>Run the installer on the target cluster. The token is shown only once.</p>
+                  <p>Attach the agent to cluster and apply YAML template below.</p>
                 </div>
 
                 <div className="result-meta">
@@ -1345,39 +1326,11 @@ kubectl -n ${namespace} rollout status deployment/kubeevalhub-agent`
                   <div>
                     <strong>ID:</strong> {createdAgentResult.agent?.id}
                   </div>
-                  <div>
-                    <strong>Backend URL:</strong> {getInstallConfig().backendUrl}
-                  </div>
-                  <div>
-                    <strong>Image:</strong> {getInstallConfig().image}
-                  </div>
-                </div>
-
-                <div className="token-block">
-                  <label>Agent token</label>
-                  <div className="token-row">
-                    <code>{createdAgentResult.token}</code>
-                    <button type="button" className="copy-button" onClick={handleCopyToken}>
-                      {copiedToken ? <FiCheck /> : <FiCopy />}
-                      <span>{copiedToken ? 'Copied' : 'Copy'}</span>
-                    </button>
-                  </div>
                 </div>
 
                 {createAgentError && <div className="form-error">{createAgentError}</div>}
 
                 <div className="copy-actions-grid">
-                  <button
-                    type="button"
-                    className="primary-button"
-                    onClick={handleCopyInstallCommand}
-                  >
-                    {installCommandCopied ? <FiCheck /> : <FiCopy />}
-                    <span>
-                      {installCommandCopied ? 'Copied install command' : 'Copy install command'}
-                    </span>
-                  </button>
-
                   <button
                     type="button"
                     className="secondary-button"
