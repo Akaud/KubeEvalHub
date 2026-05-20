@@ -58,7 +58,7 @@ func NewUserService(repo UserRepository, refreshRepo RefreshTokenRepository, jwt
 		repo:        repo,
 		refreshRepo: refreshRepo,
 		jwtSecret:   []byte(jwtSecret),
-		accessTTL:   20 * time.Minute,
+		accessTTL:   60 * time.Minute,
 		refreshTTL:  7 * 24 * time.Hour,
 	}
 }

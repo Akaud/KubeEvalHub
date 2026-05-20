@@ -217,6 +217,11 @@ export default function ClusterMetricsDetailPage() {
   const [predictionSteps, setPredictionSteps] = useState(8)
   const [predictionModel, setPredictionModel] = useState('moving_average')
 
+  const canUsePrediction = useMemo(() => {
+    const myRole = cluster?.myRole || 'none'
+    return myRole === 'admin' || myRole === 'operator'
+  }, [cluster])
+
   const selectedPredictionModel = useMemo(() => {
     return PREDICTION_MODELS.find((model) => model.value === predictionModel) || PREDICTION_MODELS[0]
   }, [predictionModel])
@@ -383,8 +388,15 @@ export default function ClusterMetricsDetailPage() {
     setShowPrediction(false)
   }, [predictionHistoryLimit, predictionSteps, predictionModel])
 
+  useEffect(() => {
+    if (!canUsePrediction) {
+      setForecast(null)
+      setShowPrediction(false)
+    }
+  }, [canUsePrediction])
+
   const loadPrediction = useCallback(async () => {
-    if (!isAuthenticated || !clusterId || !selectedItem) return
+    if (!canUsePrediction || !isAuthenticated || !clusterId || !selectedItem) return
 
     setIsPredicting(true)
     setError('')
@@ -418,12 +430,20 @@ export default function ClusterMetricsDetailPage() {
     } finally {
       setIsPredicting(false)
     }
-  }, [isAuthenticated, clusterId, selectedItem, predictionHistoryLimit, predictionSteps, predictionModel])
+  }, [
+    canUsePrediction,
+    isAuthenticated,
+    clusterId,
+    selectedItem,
+    predictionHistoryLimit,
+    predictionSteps,
+    predictionModel,
+  ])
 
   const forecastPoints = useMemo(() => {
-    if (!showPrediction) return []
+    if (!showPrediction || !canUsePrediction) return []
     return Array.isArray(forecast?.forecast) ? forecast.forecast : []
-  }, [forecast, showPrediction])
+  }, [forecast, showPrediction, canUsePrediction])
 
   const chartData = useMemo(() => {
     return buildChartData(selectedItem?.samples || [], forecastPoints)
@@ -479,76 +499,80 @@ export default function ClusterMetricsDetailPage() {
               </button>
             </div>
 
-            <div className="metrics-toolbar-right">
-              <div className="metrics-toolbar-controls">
-                <div className="metrics-toolbar-control">
-                  <label htmlFor="prediction-model-select">Model</label>
-                  <select
-                    id="prediction-model-select"
-                    value={predictionModel}
-                    onChange={(e) => setPredictionModel(e.target.value)}
-                    disabled={isLoading || isRefreshing || isPredicting}
-                  >
-                    {PREDICTION_MODELS.map((model) => (
-                      <option key={model.value} value={model.value}>
-                        {model.label}
-                      </option>
-                    ))}
-                  </select>
+            {canUsePrediction && (
+              <div className="metrics-toolbar-right">
+                <div className="metrics-toolbar-controls">
+                  <div className="metrics-toolbar-control">
+                    <label htmlFor="prediction-model-select">Model</label>
+                    <select
+                      id="prediction-model-select"
+                      value={predictionModel}
+                      onChange={(e) => setPredictionModel(e.target.value)}
+                      disabled={isLoading || isRefreshing || isPredicting}
+                    >
+                      {PREDICTION_MODELS.map((model) => (
+                        <option key={model.value} value={model.value}>
+                          {model.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="metrics-toolbar-control">
+                    <label htmlFor="prediction-history-select">History</label>
+                    <select
+                      id="prediction-history-select"
+                      value={predictionHistoryLimit}
+                      onChange={(e) => setPredictionHistoryLimit(Number(e.target.value))}
+                      disabled={isLoading || isRefreshing || isPredicting}
+                    >
+                      <option value={60}>60</option>
+                      <option value={120}>120</option>
+                      <option value={240}>240</option>
+                      <option value={300}>300</option>
+                    </select>
+                  </div>
+
+                  <div className="metrics-toolbar-control">
+                    <label htmlFor="prediction-steps-select">Steps</label>
+                    <select
+                      id="prediction-steps-select"
+                      value={predictionSteps}
+                      onChange={(e) => setPredictionSteps(Number(e.target.value))}
+                      disabled={isLoading || isRefreshing || isPredicting}
+                    >
+                      <option value={4}>4</option>
+                      <option value={8}>8</option>
+                      <option value={12}>12</option>
+                      <option value={20}>20</option>
+                    </select>
+                  </div>
                 </div>
 
-                <div className="metrics-toolbar-control">
-                  <label htmlFor="prediction-history-select">History</label>
-                  <select
-                    id="prediction-history-select"
-                    value={predictionHistoryLimit}
-                    onChange={(e) => setPredictionHistoryLimit(Number(e.target.value))}
-                    disabled={isLoading || isRefreshing || isPredicting}
-                  >
-                    <option value={60}>60</option>
-                    <option value={120}>120</option>
-                    <option value={240}>240</option>
-                    <option value={300}>300</option>
-                  </select>
-                </div>
-
-                <div className="metrics-toolbar-control">
-                  <label htmlFor="prediction-steps-select">Steps</label>
-                  <select
-                    id="prediction-steps-select"
-                    value={predictionSteps}
-                    onChange={(e) => setPredictionSteps(Number(e.target.value))}
-                    disabled={isLoading || isRefreshing || isPredicting}
-                  >
-                    <option value={4}>4</option>
-                    <option value={8}>8</option>
-                    <option value={12}>12</option>
-                    <option value={20}>20</option>
-                  </select>
-                </div>
+                <button
+                  type="button"
+                  className={`dashboard-nav-button ${showPrediction ? 'is-primary' : ''}`}
+                  onClick={() => {
+                    if (showPrediction) {
+                      setShowPrediction(false)
+                    } else {
+                      loadPrediction()
+                    }
+                  }}
+                  disabled={!selectedItem || isLoading || isRefreshing || isPredicting}
+                >
+                  {isPredicting ? 'Predicting...' : showPrediction ? 'Hide prediction' : 'Prediction'}
+                </button>
               </div>
+            )}
+          </div>
 
-              <button
-                type="button"
-                className={`dashboard-nav-button ${showPrediction ? 'is-primary' : ''}`}
-                onClick={() => {
-                  if (showPrediction) {
-                    setShowPrediction(false)
-                  } else {
-                    loadPrediction()
-                  }
-                }}
-                disabled={!selectedItem || isLoading || isRefreshing || isPredicting}
-              >
-                {isPredicting ? 'Predicting...' : showPrediction ? 'Hide prediction' : 'Prediction'}
-              </button>
+          {canUsePrediction && (
+            <div className="prediction-model-help">
+              <strong>{selectedPredictionModel.label}</strong>
+              <p>{selectedPredictionModel.description}</p>
             </div>
-          </div>
-
-          <div className="prediction-model-help">
-            <strong>{selectedPredictionModel.label}</strong>
-            <p>{selectedPredictionModel.description}</p>
-          </div>
+          )}
 
           {error && <div className="form-error">{error}</div>}
 
@@ -646,7 +670,7 @@ export default function ClusterMetricsDetailPage() {
                   <h3>{buildSeriesTitle(selectedItem.series)}</h3>
                   <p>
                     Type: {selectedItem.series.metricType} | Unit: {selectedItem.series.unit}
-                    {showPrediction && forecast?.model?.name ? ` | Model: ${forecast.model.name}` : ''}
+                    {canUsePrediction && showPrediction && forecast?.model?.name ? ` | Model: ${forecast.model.name}` : ''}
                   </p>
 
                   <div className="metrics-chart-wrapper">
@@ -671,7 +695,7 @@ export default function ClusterMetricsDetailPage() {
                           isAnimationActive={false}
                           connectNulls={false}
                         />
-                        {showPrediction && forecastPoints.length > 0 && (
+                        {canUsePrediction && showPrediction && forecastPoints.length > 0 && (
                           <Line
                             type="monotone"
                             dataKey="forecastValue"

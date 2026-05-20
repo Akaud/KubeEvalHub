@@ -3,6 +3,8 @@ import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import DashboardLayout from './pages/DashboardLayout'
 import DashboardPage from './pages/dashboard/DashboardPage'
+import ClustersPage from './pages/dashboard/ClustersPage'
+import AgentsPage from './pages/dashboard/AgentsPage'
 import ClusterMetricsDetailPage from './pages/dashboard/ClusterMetricsDetailPage'
 import ClusterInventoryDetailPage from './pages/dashboard/ClusterInventoryDetailPage'
 import ClusterRecommendationsPage from './pages/dashboard/ClusterRecommendationsPage'
@@ -27,6 +29,8 @@ function App() {
         }
       >
         <Route index element={<DashboardPage />} />
+        <Route path="clusters" element={<ClustersPage />} />
+        <Route path="agents" element={<AgentsPage />} />
 
         <Route
           path="clusters/:clusterId/metrics"

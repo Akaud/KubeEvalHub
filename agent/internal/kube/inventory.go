@@ -19,6 +19,10 @@ func CollectInventory(ctx context.Context, c *Clients) (model.InventoryPayload, 
 		return out, err
 	}
 	for _, ns := range namespaces.Items {
+		if shouldSkipNamespace(ns.Name) {
+			continue
+		}
+
 		out.Namespaces = append(out.Namespaces, model.NamespacePayload{
 			UID:    string(ns.UID),
 			Name:   ns.Name,
@@ -39,6 +43,9 @@ func CollectInventory(ctx context.Context, c *Clients) (model.InventoryPayload, 
 		return out, err
 	}
 	for _, d := range deployments.Items {
+		if shouldSkipNamespace(d.Namespace) {
+			continue
+		}
 		out.Deployments = append(out.Deployments, toDeploymentPayload(d))
 	}
 
@@ -47,6 +54,9 @@ func CollectInventory(ctx context.Context, c *Clients) (model.InventoryPayload, 
 		return out, err
 	}
 	for _, s := range statefulSets.Items {
+		if shouldSkipNamespace(s.Namespace) {
+			continue
+		}
 		out.StatefulSets = append(out.StatefulSets, toStatefulSetPayload(s))
 	}
 
@@ -55,15 +65,27 @@ func CollectInventory(ctx context.Context, c *Clients) (model.InventoryPayload, 
 		return out, err
 	}
 	for _, d := range daemonSets.Items {
+		if shouldSkipNamespace(d.Namespace) {
+			continue
+		}
 		out.DaemonSets = append(out.DaemonSets, toDaemonSetPayload(d))
 	}
+
+	replicaSets, err := c.Core.AppsV1().ReplicaSets("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return out, err
+	}
+	rsByKey := makeReplicaSetMap(replicaSets.Items)
 
 	pods, err := c.Core.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return out, err
 	}
 	for _, p := range pods.Items {
-		out.Pods = append(out.Pods, toPodPayload(p))
+		if shouldSkipNamespace(p.Namespace) {
+			continue
+		}
+		out.Pods = append(out.Pods, toPodPayload(p, rsByKey))
 	}
 
 	return out, nil
@@ -143,8 +165,11 @@ func toDaemonSetPayload(d appsv1.DaemonSet) model.DaemonSetPayload {
 	}
 }
 
-func toPodPayload(p corev1.Pod) model.PodPayload {
-	controllerUID, controllerKind, controllerName := primaryOwnerRef(p.OwnerReferences)
+func toPodPayload(
+	p corev1.Pod,
+	rsByKey map[string]appsv1.ReplicaSet,
+) model.PodPayload {
+	controllerUID, controllerKind, controllerName := resolveTopLevelControllerFromPod(p, rsByKey)
 
 	containers := make([]model.ContainerSpecPayload, 0, len(p.Spec.Containers)+len(p.Spec.InitContainers))
 	containers = append(containers, toContainerSpecs(p.Spec.Containers, false)...)

@@ -12,6 +12,16 @@ type RecommendationThresholds struct {
 	MinSampleCount int `json:"minSampleCount"`
 }
 
+type ContainerRecommendation struct {
+	Name string `json:"name"`
+
+	CurrentCPURequestCores     float64 `json:"currentCpuRequestCores"`
+	RecommendedCPURequestCores float64 `json:"recommendedCpuRequestCores"`
+
+	CurrentMemoryRequestBytes     int64 `json:"currentMemoryRequestBytes"`
+	RecommendedMemoryRequestBytes int64 `json:"recommendedMemoryRequestBytes"`
+}
+
 type RightSizingRecommendation struct {
 	Namespace      string `json:"namespace"`
 	ControllerUID  string `json:"controllerUid"`
@@ -38,6 +48,9 @@ type RightSizingRecommendation struct {
 	CPUUnderProvisioned    bool `json:"cpuUnderProvisioned"`
 	MemoryUnderProvisioned bool `json:"memoryUnderProvisioned"`
 	MemoryOOMDetected      bool `json:"memoryOomDetected"`
+
+	Containers   []ContainerRecommendation `json:"containers,omitempty"`
+	PatchCommand string                    `json:"patchCommand,omitempty"`
 }
 
 type RecommendationResponse struct {

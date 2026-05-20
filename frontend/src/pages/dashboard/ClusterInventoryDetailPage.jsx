@@ -115,6 +115,13 @@ export default function ClusterInventoryDetailPage() {
       setCluster(currentCluster)
 
       const inventoryRes = await apiFetch(`/api/clusters/${clusterId}/inventory/latest`)
+
+      if (inventoryRes.status === 404) {
+        setInventory(null)
+        setError('')
+        return
+      }
+
       const inventoryData = await inventoryRes.json().catch(() => null)
 
       if (!inventoryRes.ok) {
@@ -123,6 +130,7 @@ export default function ClusterInventoryDetailPage() {
 
       setInventory(inventoryData)
     } catch (err) {
+      setInventory(null)
       setError(err.message || 'Failed to load inventory')
     } finally {
       setIsLoading(false)
@@ -188,14 +196,6 @@ export default function ClusterInventoryDetailPage() {
                 onClick={() => navigate('/dashboard/clusters')}
               >
                 Back to clusters
-              </button>
-
-              <button
-                type="button"
-                className="dashboard-nav-button"
-                onClick={() => navigate(`/dashboard/clusters/${clusterId}/metrics`)}
-              >
-                View metrics
               </button>
 
               <button

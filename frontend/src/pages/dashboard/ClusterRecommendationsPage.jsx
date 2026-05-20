@@ -19,6 +19,10 @@ function buildDateTimeLocal(dateValue, timeValue) {
   return `${dateValue}T${timeValue}`
 }
 
+function toDateTimeLocalInputValue(date) {
+  return buildDateTimeLocal(formatDateInput(date), formatTimeInput(date))
+}
+
 function isCompleteDateTimeLocal(value) {
   return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)
 }
@@ -75,33 +79,6 @@ function buildQuery(params) {
   return search.toString()
 }
 
-function clampFromToLast24Hours(fromValue, toValue) {
-  if (!fromValue || !toValue) return fromValue
-  if (!isCompleteDateTimeLocal(fromValue) || !isCompleteDateTimeLocal(toValue)) {
-    return fromValue
-  }
-
-  const fromDate = parseDateTimeLocal(fromValue)
-  const toDate = parseDateTimeLocal(toValue)
-
-  if (!fromDate || !toDate) {
-    return fromValue
-  }
-
-  const minFrom = new Date(toDate)
-  minFrom.setHours(minFrom.getHours() - 24)
-
-  if (fromDate < minFrom) {
-    return `${formatDateInput(minFrom)}T${formatTimeInput(minFrom)}`
-  }
-
-  if (fromDate > toDate) {
-    return `${formatDateInput(toDate)}T${formatTimeInput(toDate)}`
-  }
-
-  return fromValue
-}
-
 async function readJsonSafely(res) {
   const text = await res.text()
 
@@ -110,6 +87,54 @@ async function readJsonSafely(res) {
   } catch {
     throw new Error(`Expected JSON but got: ${text.slice(0, 200)}`)
   }
+}
+
+function buildRollbackCommand(item) {
+  if (!item?.patchCommand) return ''
+
+  const namespace = item.namespace
+  const kind = String(item.controllerKind || item.kind || '').toLowerCase()
+  const name = item.controllerName || item.workloadName || item.name
+
+  if (!namespace || !kind || !name) return ''
+  if (!['deployment', 'daemonset', 'statefulset'].includes(kind)) return ''
+
+  return `kubectl -n ${namespace} rollout undo ${kind}/${name}`
+}
+
+function buildLastWeekRange() {
+  const to = new Date()
+  const from = new Date(to)
+  from.setDate(from.getDate() - 7)
+
+  return {
+    from: toDateTimeLocalInputValue(from),
+    to: toDateTimeLocalInputValue(to),
+  }
+}
+
+function CopyCommandButton({ command, idleLabel, copiedLabel, primary = false }) {
+  const [copied, setCopied] = useState(false)
+
+  if (!command) return null
+
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(command)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {}
+  }
+
+  return (
+    <button
+      type="button"
+      className={primary ? 'dashboard-nav-button is-primary' : 'dashboard-nav-button'}
+      onClick={onCopy}
+    >
+      {copied ? copiedLabel : idleLabel}
+    </button>
+  )
 }
 
 function MetricRow({ label, value, highlight = false }) {
@@ -126,27 +151,9 @@ export default function ClusterRecommendationsPage() {
   const navigate = useNavigate()
   const { isAuthenticated, isReady } = useAuth()
 
-  const defaultTo = useMemo(() => new Date(), [])
-  const defaultFrom = useMemo(() => {
-    const d = new Date()
-    d.setHours(d.getHours() - 24)
-    return d
-  }, [])
-
-  const [fromDate, setFromDate] = useState(formatDateInput(defaultFrom))
-  const [fromTime, setFromTime] = useState(formatTimeInput(defaultFrom))
-  const [toDate, setToDate] = useState(formatDateInput(defaultTo))
-  const [toTime, setToTime] = useState(formatTimeInput(defaultTo))
-
-  const from = useMemo(
-    () => buildDateTimeLocal(fromDate, fromTime),
-    [fromDate, fromTime]
-  )
-
-  const to = useMemo(
-    () => buildDateTimeLocal(toDate, toTime),
-    [toDate, toTime]
-  )
+  const initialRange = useMemo(() => buildLastWeekRange(), [])
+  const [from, setFrom] = useState(initialRange.from)
+  const [to, setTo] = useState(initialRange.to)
 
   const [recommendations, setRecommendations] = useState(null)
   const [overProvisioned, setOverProvisioned] = useState(null)
@@ -159,7 +166,11 @@ export default function ClusterRecommendationsPage() {
   const loadData = async () => {
     if (!isAuthenticated || !clusterId) return
 
-    if (!isCompleteDateTimeLocal(from) || !isCompleteDateTimeLocal(to)) {
+    const range = buildLastWeekRange()
+    setFrom(range.from)
+    setTo(range.to)
+
+    if (!isCompleteDateTimeLocal(range.from) || !isCompleteDateTimeLocal(range.to)) {
       setError('from and to are required')
       return
     }
@@ -169,8 +180,8 @@ export default function ClusterRecommendationsPage() {
 
     try {
       const query = buildQuery({
-        from: toRFC3339Local(from),
-        to: toRFC3339Local(to),
+        from: toRFC3339Local(range.from),
+        to: toRFC3339Local(range.to),
       })
 
       const requests = [
@@ -226,27 +237,13 @@ export default function ClusterRecommendationsPage() {
   }
 
   useEffect(() => {
-    if (!isReady || !isAuthenticated) return
-    if (!isCompleteDateTimeLocal(from) || !isCompleteDateTimeLocal(to)) return
+    if (!isReady || !isAuthenticated || !clusterId) return
 
     loadData()
     const intervalId = setInterval(loadData, 30000)
 
     return () => clearInterval(intervalId)
-  }, [isReady, isAuthenticated, clusterId, from, to])
-
-  useEffect(() => {
-    if (!isCompleteDateTimeLocal(from) || !isCompleteDateTimeLocal(to)) return
-
-    const clampedFrom = clampFromToLast24Hours(from, to)
-    if (clampedFrom !== from) {
-      const parsed = parseDateTimeLocal(clampedFrom)
-      if (parsed) {
-        setFromDate(formatDateInput(parsed))
-        setFromTime(formatTimeInput(parsed))
-      }
-    }
-  }, [from, to])
+  }, [isReady, isAuthenticated, clusterId])
 
   const recommendationItems = Array.isArray(recommendations)
     ? recommendations
@@ -269,80 +266,12 @@ export default function ClusterRecommendationsPage() {
       underProvisioned?.underProvisioned ||
       []
 
-  const maxToDate = formatDateInput(new Date())
-  const maxToTime = useMemo(() => {
-    if (toDate !== maxToDate) return '23:59'
-    return formatTimeInput(new Date())
-  }, [toDate, maxToDate])
-
-  const minFromDate = useMemo(() => {
-    if (!isCompleteDateTimeLocal(to)) return ''
-    const parsedTo = parseDateTimeLocal(to)
-    if (!parsedTo) return ''
-
-    const min = new Date(parsedTo)
-    min.setHours(min.getHours() - 24)
-    return formatDateInput(min)
-  }, [to])
-
-  const minFromTime = useMemo(() => {
-    if (!isCompleteDateTimeLocal(to) || !fromDate) return '00:00'
-
-    const parsedTo = parseDateTimeLocal(to)
-    if (!parsedTo) return '00:00'
-
-    const min = new Date(parsedTo)
-    min.setHours(min.getHours() - 24)
-
-    if (fromDate !== formatDateInput(min)) return '00:00'
-    return formatTimeInput(min)
-  }, [to, fromDate])
-
-  const maxFromTime = useMemo(() => {
-    if (!isCompleteDateTimeLocal(to) || !fromDate || fromDate !== toDate) {
-      return '23:59'
-    }
-    return toTime || '23:59'
-  }, [to, fromDate, toDate, toTime])
-
-  const applyClampedFrom = (nextDate, nextTime) => {
-    const nextFrom = buildDateTimeLocal(nextDate, nextTime)
-
-    if (!nextDate) {
-      setFromDate('')
-      return
-    }
-
-    if (!nextTime) {
-      setFromTime('')
-      return
-    }
-
-    if (!isCompleteDateTimeLocal(nextFrom) || !isCompleteDateTimeLocal(to)) {
-      setFromDate(nextDate)
-      setFromTime(nextTime)
-      return
-    }
-
-    const clamped = clampFromToLast24Hours(nextFrom, to)
-    const parsed = parseDateTimeLocal(clamped)
-
-    if (!parsed) {
-      setFromDate(nextDate)
-      setFromTime(nextTime)
-      return
-    }
-
-    setFromDate(formatDateInput(parsed))
-    setFromTime(formatTimeInput(parsed))
-  }
-
   return (
     <>
       <div className="dashboard-header">
         <div>
           <h1>Cluster recommendations</h1>
-          <p>Right-sizing, pressure, and capacity signals for cluster {clusterId}.</p>
+          <p>Right-sizing, pressure, and capacity signals for cluster {clusterId} over the last 7 days.</p>
         </div>
 
         <div className="cluster-actions">
@@ -359,68 +288,12 @@ export default function ClusterRecommendationsPage() {
       <div className="cluster-recommendations-page">
         <section className="cluster-recommendations-top">
           <div className="cluster-recommendations-main">
-            <div className="dashboard-card cluster-recommendations-card analysis-window-card">
+            <div className="dashboard-card cluster-recommendations-card">
               <h3>Analysis window</h3>
-
-              <div className="analysis-window-grid">
-                <div className="analysis-window-field">
-                  <span>From</span>
-                  <div className="analysis-window-split">
-                    <input
-                      className="analysis-window-input"
-                      type="date"
-                      value={fromDate}
-                      min={minFromDate || undefined}
-                      max={toDate || undefined}
-                      onChange={(e) => {
-                        const nextDate = e.target.value
-                        setFromDate(nextDate)
-                        applyClampedFrom(nextDate, fromTime)
-                      }}
-                    />
-                    <input
-                      className="analysis-window-input"
-                      type="time"
-                      step={60}
-                      value={fromTime}
-                      min={minFromTime}
-                      max={maxFromTime}
-                      onChange={(e) => {
-                        const nextTime = e.target.value
-                        setFromTime(nextTime)
-                        applyClampedFrom(fromDate, nextTime)
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div className="analysis-window-field">
-                  <span>To</span>
-                  <div className="analysis-window-split">
-                    <input
-                      className="analysis-window-input"
-                      type="date"
-                      value={toDate}
-                      max={maxToDate}
-                      onChange={(e) => {
-                        const nextDate = e.target.value
-                        setToDate(nextDate)
-                      }}
-                    />
-                    <input
-                      className="analysis-window-input"
-                      type="time"
-                      step={60}
-                      value={toTime}
-                      min="00:00"
-                      max={toDate === maxToDate ? maxToTime : '23:59'}
-                      onChange={(e) => {
-                        const nextTime = e.target.value
-                        setToTime(nextTime)
-                      }}
-                    />
-                  </div>
-                </div>
+              <p>Rolling last 7 days.</p>
+              <div className="recommendation-meta">
+                <p>From: {from.replace('T', ' ')}</p>
+                <p>To: {to.replace('T', ' ')}</p>
               </div>
 
               <div className="analysis-window-actions">
@@ -441,6 +314,7 @@ export default function ClusterRecommendationsPage() {
           <aside className="cluster-recommendations-sidebar">
             <div className="dashboard-card cluster-recommendations-card capacity-card">
               <h3>Capacity overview</h3>
+              <p className="dashboard-section-note">Analysis window: rolling last 7 days.</p>
 
               {isLoading && !capacity ? (
                 <p>Loading capacity...</p>
@@ -560,6 +434,17 @@ export default function ClusterRecommendationsPage() {
                             highlight
                           />
                         )}
+                        <CopyCommandButton
+                          command={item.patchCommand}
+                          idleLabel="Copy patch"
+                          copiedLabel="Patch copied"
+                          primary
+                        />
+                        <CopyCommandButton
+                          command={buildRollbackCommand(item)}
+                          idleLabel="Copy rollback"
+                          copiedLabel="Rollback copied"
+                        />
                         {item.reason && <p className="recommendation-reason">{item.reason}</p>}
                       </div>
                     </div>

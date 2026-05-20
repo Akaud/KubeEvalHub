@@ -84,6 +84,21 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) DeleteCurrentUser(w http.ResponseWriter, r *http.Request) {
+	userID, ok := getAuthenticatedUserID(r)
+	if !ok || userID <= 0 {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	if err := h.userService.DeleteUser(r.Context(), userID); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	var req refreshRequest
 	if err := decodeJSON(w, r, &req); err != nil {

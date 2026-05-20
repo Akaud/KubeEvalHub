@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"math"
 	"sort"
@@ -14,6 +16,15 @@ import (
 )
 
 var ErrInvalidAnalysisQuery = errors.New("invalid analysis query")
+
+const (
+	minRecommendedContainerCPUCores    = 0.01             // 10m
+	minRecommendedContainerMemoryBytes = 32 * 1024 * 1024 // 32Mi
+
+	minMaterialCPURecommendationDeltaCores    = 0.01             // 10m
+	minMaterialMemoryRecommendationDeltaBytes = 32 * 1024 * 1024 // 32Mi
+	minMaterialRecommendationDeltaRatio       = 0.05             // 5%
+)
 
 type AnalysisService interface {
 	GetWorkloadUtilization(
@@ -58,6 +69,22 @@ type AnalysisService interface {
 	) (*model.ClusterCapacityResponse, error)
 }
 
+type workloadContainerBucket struct {
+	namespace      string
+	controllerUID  string
+	controllerKind string
+	controllerName string
+
+	containers []containerEntry
+}
+
+type containerEntry struct {
+	name string
+
+	cpuRequestCores    float64
+	memoryRequestBytes int64
+}
+
 type analysisService struct {
 	metricRepo    repository.MetricRepository
 	inventoryRepo repository.InventoryRepository
@@ -71,6 +98,28 @@ func NewAnalysisService(
 		metricRepo:    metricRepo,
 		inventoryRepo: inventoryRepo,
 	}
+}
+
+func shouldExcludeNamespace(namespace string) bool {
+	switch strings.ToLower(strings.TrimSpace(namespace)) {
+	case "kubeevalhub-agent", "kube-system", "kube-public", "kube-node-lease":
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldExcludeControllerKind(kind string) bool {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "node":
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldExcludeWorkload(namespace, kind string) bool {
+	return shouldExcludeNamespace(namespace) || shouldExcludeControllerKind(kind)
 }
 
 type workloadMetricBucket struct {
@@ -93,6 +142,68 @@ type workloadRequestBucket struct {
 
 	cpuRequestCores    float64
 	memoryRequestBytes int64
+}
+
+func groupWorkloadContainers(
+	pods []model.PodInventory,
+	containers []model.ContainerInventory,
+) map[string]*workloadContainerBucket {
+	podMap := make(map[string]model.PodInventory, len(pods))
+	for _, pod := range pods {
+		podMap[pod.ID] = pod
+	}
+
+	grouped := make(map[string]*workloadContainerBucket)
+
+	for _, ctr := range containers {
+		if strings.TrimSpace(ctr.ParentKind) != "pod" {
+			continue
+		}
+
+		pod, ok := podMap[ctr.ParentRefID]
+		if !ok {
+			continue
+		}
+		if pod.ControllerUID == nil || strings.TrimSpace(*pod.ControllerUID) == "" {
+			continue
+		}
+
+		key := workloadKey(
+			pod.Namespace,
+			deref(pod.ControllerUID),
+			deref(pod.ControllerKind),
+			deref(pod.ControllerName),
+		)
+
+		bucket, ok := grouped[key]
+		if !ok {
+			bucket = &workloadContainerBucket{
+				namespace:      pod.Namespace,
+				controllerUID:  deref(pod.ControllerUID),
+				controllerKind: deref(pod.ControllerKind),
+				controllerName: deref(pod.ControllerName),
+			}
+			if shouldExcludeWorkload(bucket.namespace, bucket.controllerKind) {
+				continue
+			}
+			grouped[key] = bucket
+		}
+
+		entry := containerEntry{
+			name: ctr.Name,
+		}
+
+		if ctr.CPURequestMillicores != nil {
+			entry.cpuRequestCores = float64(*ctr.CPURequestMillicores) / 1000.0
+		}
+		if ctr.MemoryRequestBytes != nil {
+			entry.memoryRequestBytes = *ctr.MemoryRequestBytes
+		}
+
+		bucket.containers = append(bucket.containers, entry)
+	}
+
+	return grouped
 }
 
 func (s *analysisService) GetWorkloadUtilization(
@@ -366,6 +477,9 @@ func groupUsageRows(rows []model.MetricSampleRow) map[string]*workloadMetricBuck
 				controllerKind: deref(row.ControllerKind),
 				controllerName: deref(row.ControllerName),
 			}
+			if shouldExcludeWorkload(bucket.namespace, bucket.controllerKind) {
+				continue
+			}
 			grouped[key] = bucket
 		}
 
@@ -419,6 +533,9 @@ func groupWorkloadRequests(
 				controllerUID:  deref(pod.ControllerUID),
 				controllerKind: deref(pod.ControllerKind),
 				controllerName: deref(pod.ControllerName),
+			}
+			if shouldExcludeWorkload(bucket.namespace, bucket.controllerKind) {
+				continue
 			}
 			grouped[key] = bucket
 		}
@@ -516,6 +633,76 @@ func clampNonNegativeInt64(v int64) int64 {
 		return 0
 	}
 	return v
+}
+
+func absInt64(v int64) int64 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+func sameEffectiveCPURequest(current, recommended float64) bool {
+	return formatCPU(current) == formatCPU(recommended)
+}
+
+func sameEffectiveMemoryRequest(current, recommended int64) bool {
+	return formatMemory(current) == formatMemory(recommended)
+}
+
+func materiallyDifferentCPURequest(current, recommended float64) bool {
+	if sameEffectiveCPURequest(current, recommended) {
+		return false
+	}
+
+	delta := math.Abs(current - recommended)
+	if delta < minMaterialCPURecommendationDeltaCores {
+		return false
+	}
+
+	if current > 0 && (delta/current) < minMaterialRecommendationDeltaRatio {
+		return false
+	}
+
+	return true
+}
+
+func materiallyDifferentMemoryRequest(current, recommended int64) bool {
+	if sameEffectiveMemoryRequest(current, recommended) {
+		return false
+	}
+
+	delta := absInt64(current - recommended)
+	if delta < minMaterialMemoryRecommendationDeltaBytes {
+		return false
+	}
+
+	if current > 0 && (float64(delta)/float64(current)) < minMaterialRecommendationDeltaRatio {
+		return false
+	}
+
+	return true
+}
+
+func recommendationWouldChangeRequests(rec model.RightSizingRecommendation) bool {
+	cpuChanged := false
+	memChanged := false
+
+	if rec.RecommendedCPURequestCores > 0 || rec.CurrentCPURequestCores > 0 {
+		cpuChanged = materiallyDifferentCPURequest(
+			rec.CurrentCPURequestCores,
+			rec.RecommendedCPURequestCores,
+		)
+	}
+
+	if rec.RecommendedMemoryRequestBytes > 0 || rec.CurrentMemoryRequestBytes > 0 {
+		memChanged = materiallyDifferentMemoryRequest(
+			rec.CurrentMemoryRequestBytes,
+			rec.RecommendedMemoryRequestBytes,
+		)
+	}
+
+	return cpuChanged || memChanged
 }
 
 type workloadLimitBucket struct {
@@ -785,6 +972,9 @@ func groupWorkloadLimits(
 				controllerKind: deref(pod.ControllerKind),
 				controllerName: deref(pod.ControllerName),
 			}
+			if shouldExcludeWorkload(bucket.namespace, bucket.controllerKind) {
+				continue
+			}
 			grouped[key] = bucket
 		}
 
@@ -833,6 +1023,9 @@ func groupWorkloadRuntimeSignals(
 				controllerUID:  deref(pod.ControllerUID),
 				controllerKind: deref(pod.ControllerKind),
 				controllerName: deref(pod.ControllerName),
+			}
+			if shouldExcludeWorkload(bucket.namespace, bucket.controllerKind) {
+				continue
 			}
 			grouped[key] = bucket
 		}
@@ -897,6 +1090,7 @@ func (s *analysisService) GetRightSizingRecommendations(
 	requestsGrouped := groupWorkloadRequests(pods, containers)
 	limitsGrouped := groupWorkloadLimits(pods, containers)
 	runtimeGrouped := groupWorkloadRuntimeSignals(pods, containerStatuses)
+	containersGrouped := groupWorkloadContainers(pods, containers)
 
 	keys := make(map[string]struct{})
 	for k := range usageGrouped {
@@ -931,6 +1125,10 @@ func (s *analysisService) GetRightSizingRecommendations(
 			rec.ControllerName = requests.controllerName
 		}
 
+		if shouldExcludeWorkload(rec.Namespace, rec.ControllerKind) {
+			continue
+		}
+
 		if requests != nil {
 			rec.CurrentCPURequestCores = requests.cpuRequestCores
 			rec.CurrentMemoryRequestBytes = requests.memoryRequestBytes
@@ -953,8 +1151,12 @@ func (s *analysisService) GetRightSizingRecommendations(
 
 		if memStats != nil {
 			rec.ObservedMemoryP95Bytes = int64(math.Round(memStats.P95))
+
+			p95WithMargin := int64(math.Round(memStats.P95 * thresholds.MemorySafetyMargin))
+			p99 := int64(math.Round(memStats.P99))
+
 			rec.RecommendedMemoryRequestBytes = maxInt64(
-				int64(math.Round(memStats.P95*thresholds.MemorySafetyMargin)),
+				maxInt64(p95WithMargin, p99),
 				thresholds.MinMemoryRequestBytes,
 			)
 		}
@@ -976,9 +1178,75 @@ func (s *analysisService) GetRightSizingRecommendations(
 		rec.MemoryUnderProvisioned = memUnder
 		rec.MemoryOOMDetected = oomDetected
 
-		if !eligible {
+		noOpRecommendation := false
+		if rec.Eligible && !recommendationWouldChangeRequests(rec) {
+			rec.Eligible = false
+			rec.Reason = "recommended requests are effectively the same as current requests"
+			noOpRecommendation = true
+		}
+
+		if !rec.Eligible {
 			rec.RecommendedCPURequestCores = 0
 			rec.RecommendedMemoryRequestBytes = 0
+		}
+
+		containerBucket := containersGrouped[key]
+		containerCount := 0
+		if containerBucket != nil {
+			containerCount = len(containerBucket.containers)
+		}
+
+		log.Printf(
+			"patch candidate kind=%s name=%s eligible=%t containers=%d reason=%s",
+			rec.ControllerKind,
+			rec.ControllerName,
+			rec.Eligible,
+			containerCount,
+			rec.Reason,
+		)
+
+		if noOpRecommendation {
+			log.Printf(
+				"recommendation skipped kind=%s name=%s namespace=%s reason=no-op",
+				rec.ControllerKind,
+				rec.ControllerName,
+				rec.Namespace,
+			)
+			continue
+		}
+
+		if rec.Eligible &&
+			containerBucket != nil &&
+			len(containerBucket.containers) > 0 {
+
+			scaled := scaleContainersToRecommendation(
+				containerBucket.containers,
+				rec.RecommendedCPURequestCores,
+				rec.RecommendedMemoryRequestBytes,
+			)
+
+			rec.PatchCommand = buildPatchCommand(
+				rec.Namespace,
+				rec.ControllerKind,
+				rec.ControllerName,
+				scaled,
+			)
+
+			if rec.PatchCommand == "" {
+				log.Printf(
+					"patch skipped kind=%s name=%s namespace=%s reason=unsupported-kind-or-empty-command",
+					rec.ControllerKind,
+					rec.ControllerName,
+					rec.Namespace,
+				)
+			} else {
+				log.Printf(
+					"patch generated kind=%s name=%s namespace=%s",
+					rec.ControllerKind,
+					rec.ControllerName,
+					rec.Namespace,
+				)
+			}
 		}
 
 		items = append(items, rec)
@@ -1003,6 +1271,124 @@ func (s *analysisService) GetRightSizingRecommendations(
 	}, nil
 }
 
+func scaleContainersToRecommendation(
+	containers []containerEntry,
+	targetCPU float64,
+	targetMem int64,
+) []containerEntry {
+	var totalCPU float64
+	var totalMem int64
+
+	for _, c := range containers {
+		totalCPU += c.cpuRequestCores
+		totalMem += c.memoryRequestBytes
+	}
+
+	out := make([]containerEntry, len(containers))
+
+	for i, c := range containers {
+		out[i] = c
+
+		if totalCPU > 0 {
+			ratio := c.cpuRequestCores / totalCPU
+			scaledCPU := ratio * targetCPU
+			out[i].cpuRequestCores = math.Max(scaledCPU, minRecommendedContainerCPUCores)
+		} else if targetCPU > 0 {
+			evenCPU := targetCPU / float64(len(containers))
+			out[i].cpuRequestCores = math.Max(evenCPU, minRecommendedContainerCPUCores)
+		}
+
+		if totalMem > 0 {
+			ratio := float64(c.memoryRequestBytes) / float64(totalMem)
+			scaledMem := int64(math.Round(ratio * float64(targetMem)))
+			out[i].memoryRequestBytes = maxInt64(scaledMem, minRecommendedContainerMemoryBytes)
+		} else if targetMem > 0 {
+			evenMem := int64(math.Round(float64(targetMem) / float64(len(containers))))
+			out[i].memoryRequestBytes = maxInt64(evenMem, minRecommendedContainerMemoryBytes)
+		}
+	}
+
+	return out
+}
+
+func buildPatchCommand(
+	namespace, kind, name string,
+	containers []containerEntry,
+) string {
+	if len(containers) == 0 {
+		return ""
+	}
+
+	switch strings.ToLower(kind) {
+	case "deployment", "statefulset", "daemonset":
+	default:
+		return ""
+	}
+
+	type containerPatch struct {
+		Name      string `json:"name"`
+		Resources struct {
+			Requests struct {
+				CPU    string `json:"cpu"`
+				Memory string `json:"memory"`
+			} `json:"requests"`
+		} `json:"resources"`
+	}
+
+	var patches []containerPatch
+
+	for _, c := range containers {
+		p := containerPatch{Name: c.name}
+		p.Resources.Requests.CPU = formatCPU(c.cpuRequestCores)
+		p.Resources.Requests.Memory = formatMemory(c.memoryRequestBytes)
+		patches = append(patches, p)
+	}
+
+	payload := map[string]interface{}{
+		"spec": map[string]interface{}{
+			"template": map[string]interface{}{
+				"spec": map[string]interface{}{
+					"containers": patches,
+				},
+			},
+		},
+	}
+
+	raw, _ := json.Marshal(payload)
+
+	return fmt.Sprintf(
+		"kubectl -n %s patch %s %s --type='strategic' -p '%s'",
+		namespace,
+		strings.ToLower(kind),
+		name,
+		string(raw),
+	)
+}
+
+func formatCPU(v float64) string {
+	if v <= 0 {
+		return "0"
+	}
+
+	milli := int(math.Round(v * 1000))
+	if milli < 1000 {
+		return fmt.Sprintf("%dm", milli)
+	}
+
+	if milli%1000 == 0 {
+		return fmt.Sprintf("%d", milli/1000)
+	}
+
+	return fmt.Sprintf("%dm", milli)
+}
+
+func formatMemory(b int64) string {
+	if b <= 0 {
+		return "0Mi"
+	}
+	return fmt.Sprintf("%dMi", b/(1024*1024))
+}
+
 func normalizeRecommendationThresholds(in model.RecommendationThresholds) model.RecommendationThresholds {
 	if in.CPUSafetyMargin <= 0 {
 		in.CPUSafetyMargin = 1.20
@@ -1017,7 +1403,7 @@ func normalizeRecommendationThresholds(in model.RecommendationThresholds) model.
 		in.MinMemoryRequestBytes = 64 * 1024 * 1024
 	}
 	if in.MinSampleCount <= 0 {
-		in.MinSampleCount = 5
+		in.MinSampleCount = 30
 	}
 	return in
 }
@@ -1116,6 +1502,51 @@ func (s *analysisService) GetClusterCapacity(
 		return nil, ErrInvalidAnalysisQuery
 	}
 
+	// Current requested resources must come directly from latest inventory snapshot.
+	snapshot, err := s.inventoryRepo.GetLatestSnapshotByClusterID(ctx, clusterID)
+	if err != nil {
+		return nil, err
+	}
+
+	pods, err := s.inventoryRepo.GetPodsBySnapshotID(ctx, snapshot.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	containers, err := s.inventoryRepo.GetContainersBySnapshotID(ctx, snapshot.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	requestsGrouped := groupWorkloadRequests(pods, containers)
+
+	nsMap := make(map[string]*model.NamespaceCapacity)
+
+	var totalCPU float64
+	var totalMem int64
+	var totalWorkloads int
+
+	for _, req := range requestsGrouped {
+		totalWorkloads++
+
+		ns := req.namespace
+		bucket, ok := nsMap[ns]
+		if !ok {
+			bucket = &model.NamespaceCapacity{
+				Namespace: ns,
+			}
+			nsMap[ns] = bucket
+		}
+
+		bucket.WorkloadCount++
+		bucket.TotalCPURequestCores += req.cpuRequestCores
+		bucket.TotalMemoryRequestBytes += req.memoryRequestBytes
+
+		totalCPU += req.cpuRequestCores
+		totalMem += req.memoryRequestBytes
+	}
+
+	// Reclaimable resources should come from right-sizing recommendations.
 	recs, err := s.GetRightSizingRecommendations(
 		ctx,
 		clusterID,
@@ -1128,18 +1559,16 @@ func (s *analysisService) GetClusterCapacity(
 		return nil, err
 	}
 
-	nsMap := make(map[string]*model.NamespaceCapacity)
-
-	var totalCPU float64
-	var totalMem int64
 	var reclaimCPU float64
 	var reclaimMem int64
-
-	var totalWorkloads int
 	var eligibleWorkloads int
 
 	for _, item := range recs.Items {
-		totalWorkloads++
+		if !item.Eligible {
+			continue
+		}
+
+		eligibleWorkloads++
 
 		ns := item.Namespace
 		bucket, ok := nsMap[ns]
@@ -1150,19 +1579,6 @@ func (s *analysisService) GetClusterCapacity(
 			nsMap[ns] = bucket
 		}
 
-		bucket.WorkloadCount++
-
-		totalCPU += item.CurrentCPURequestCores
-		totalMem += item.CurrentMemoryRequestBytes
-
-		bucket.TotalCPURequestCores += item.CurrentCPURequestCores
-		bucket.TotalMemoryRequestBytes += item.CurrentMemoryRequestBytes
-
-		if !item.Eligible {
-			continue
-		}
-
-		eligibleWorkloads++
 		bucket.EligibleWorkloadCount++
 
 		cpuDelta := item.CurrentCPURequestCores - item.RecommendedCPURequestCores

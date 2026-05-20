@@ -34,7 +34,7 @@ services:
       DB_USER: appuser
       DB_PASSWORD: apppassword
       DB_SSLMODE: disable
-      JWT_SECRET: super-secret-change-me
+      JWT_SECRET: replace-with-long-random-secret
       READ_TIMEOUT: 5s
       WRITE_TIMEOUT: 10s
       IDLE_TIMEOUT: 60s
@@ -43,6 +43,14 @@ services:
     networks:
       - private
       - public
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    user: "10001:10001"
 
   frontend:
     build:
@@ -56,7 +64,6 @@ services:
       - "8080:80"
     networks:
       - public
-
 volumes:
   postgres_data:
 

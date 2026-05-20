@@ -60,14 +60,20 @@ func (s *clusterService) UpdateClusterMetadataFromAgent(ctx context.Context, age
 		return errors.New("agent id is required")
 	}
 
+	clusterUID := normalizeOptionalString(payload.ClusterUID)
+	clusterName := normalizeOptionalString(payload.ClusterName)
+	kubeVersion := normalizeOptionalString(payload.KubeVersion)
+	distribution := normalizeOptionalString(payload.Distribution)
+	apiServerHost := normalizeOptionalString(payload.APIServerHost)
+
 	return s.clusterRepo.UpdateMetadataByAgentID(
 		ctx,
 		agentID,
-		strings.TrimSpace(payload.ClusterUID),
-		strings.TrimSpace(payload.ClusterName),
-		strings.TrimSpace(payload.KubeVersion),
-		strings.TrimSpace(payload.Distribution),
-		strings.TrimSpace(payload.APIServerHost),
+		clusterUID,
+		clusterName,
+		kubeVersion,
+		distribution,
+		apiServerHost,
 		time.Now().UTC(),
 	)
 }
@@ -101,11 +107,11 @@ func (s *clusterService) CreateCluster(ctx context.Context, ownerID int64, req m
 		ID:            uuid.NewString(),
 		OwnerID:       ownerID,
 		AgentID:       nil,
-		ClusterUID:    "",
+		ClusterUID:    normalizeOptionalString(""),
 		ClusterName:   req.ClusterName,
-		KubeVersion:   "",
-		Distribution:  "manual",
-		APIServerHost: "",
+		KubeVersion:   normalizeOptionalString(""),
+		Distribution:  normalizeOptionalString(""),
+		APIServerHost: normalizeOptionalString(""),
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
@@ -299,4 +305,8 @@ func isValidClusterRole(role model.ClusterRole) bool {
 	default:
 		return false
 	}
+}
+
+func normalizeOptionalString(value string) string {
+	return strings.TrimSpace(value)
 }

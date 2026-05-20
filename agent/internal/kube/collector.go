@@ -6,9 +6,12 @@ import (
 
 	"agent/internal/model"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+const excludedAgentNamespace = "kubeevalhub-agent"
 
 type podMetricMeta struct {
 	UID            string
@@ -18,6 +21,10 @@ type podMetricMeta struct {
 	ControllerUID  string
 	ControllerKind string
 	ControllerName string
+}
+
+func shouldSkipNamespace(namespace string) bool {
+	return namespace == excludedAgentNamespace
 }
 
 func CollectSamples(ctx context.Context, c *Clients) ([]model.MetricPointPayload, error) {
@@ -68,6 +75,10 @@ func CollectSamples(ctx context.Context, c *Clients) ([]model.MetricPointPayload
 	}
 
 	for _, pm := range podMetrics.Items {
+		if shouldSkipNamespace(pm.Namespace) {
+			continue
+		}
+
 		collectedAt := metricsTimestampOrNow(pm.Timestamp.Time, now)
 
 		meta, hasMeta := podMetaByKey[podMetricKey(pm.Namespace, pm.Name)]
@@ -163,9 +174,20 @@ func collectPodMetricMeta(ctx context.Context, c *Clients) (map[string]podMetric
 		return nil, err
 	}
 
+	replicaSets, err := c.Core.AppsV1().ReplicaSets("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	rsByKey := makeReplicaSetMap(replicaSets.Items)
+
 	out := make(map[string]podMetricMeta, len(pods.Items))
 	for _, p := range pods.Items {
-		controllerUID, controllerKind, controllerName := primaryOwnerRef(p.OwnerReferences)
+		if shouldSkipNamespace(p.Namespace) {
+			continue
+		}
+
+		controllerUID, controllerKind, controllerName := resolveTopLevelControllerFromPod(p, rsByKey)
 
 		meta := podMetricMeta{
 			UID:            string(p.UID),
@@ -228,6 +250,40 @@ func metricMetaControllerName(meta podMetricMeta, ok bool) string {
 	return meta.ControllerName
 }
 
-func resolveTopLevelControllerFromPod(_ corev1.Pod) (uid, kind, name string) {
-	return "", "", ""
+func makeReplicaSetMap(items []appsv1.ReplicaSet) map[string]appsv1.ReplicaSet {
+	out := make(map[string]appsv1.ReplicaSet, len(items))
+	for _, rs := range items {
+		out[replicaSetKey(rs.Namespace, rs.Name)] = rs
+	}
+	return out
+}
+
+func replicaSetKey(namespace, name string) string {
+	return namespace + "/" + name
+}
+
+func resolveTopLevelControllerFromPod(
+	pod corev1.Pod,
+	rsByKey map[string]appsv1.ReplicaSet,
+) (uid, kind, name string) {
+	uid, kind, name = primaryOwnerRef(pod.OwnerReferences)
+	if kind == "" || name == "" {
+		return "", "", ""
+	}
+
+	if kind != "ReplicaSet" {
+		return uid, kind, name
+	}
+
+	rs, ok := rsByKey[replicaSetKey(pod.Namespace, name)]
+	if !ok {
+		return uid, kind, name
+	}
+
+	rsOwnerUID, rsOwnerKind, rsOwnerName := primaryOwnerRef(rs.OwnerReferences)
+	if rsOwnerKind == "Deployment" && rsOwnerName != "" {
+		return rsOwnerUID, rsOwnerKind, rsOwnerName
+	}
+
+	return uid, kind, name
 }

@@ -69,9 +69,13 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 
 	r.Route("/users", func(r chi.Router) {
 		r.Post("/", userHandler.CreateUser)
+
 		r.Group(func(r chi.Router) {
 			r.Use(jwtAuthMiddleware)
+
 			r.Get("/me", userHandler.GetCurrentUser)
+			r.Delete("/me", userHandler.DeleteCurrentUser)
+
 			r.Put("/{id}", userHandler.UpdateUser)
 			r.Patch("/{id}", userHandler.PatchUser)
 			r.Delete("/{id}", userHandler.DeleteUser)

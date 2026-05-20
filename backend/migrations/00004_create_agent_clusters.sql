@@ -16,9 +16,9 @@ CREATE TABLE IF NOT EXISTS agent_clusters (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_clusters_owner_cluster_uid_nonnull
+CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_clusters_owner_cluster_uid_nonblank
     ON agent_clusters (owner_id, cluster_uid)
-    WHERE cluster_uid IS NOT NULL;
+    WHERE cluster_uid IS NOT NULL AND btrim(cluster_uid) <> '';
 
 CREATE INDEX IF NOT EXISTS idx_agent_clusters_owner_id
     ON agent_clusters (owner_id);
@@ -29,7 +29,7 @@ CREATE INDEX IF NOT EXISTS idx_agent_clusters_owner_id
 -- +goose StatementBegin
 
 DROP INDEX IF EXISTS idx_agent_clusters_owner_id;
-DROP INDEX IF EXISTS uq_agent_clusters_owner_cluster_uid_nonnull;
+DROP INDEX IF EXISTS uq_agent_clusters_owner_cluster_uid_nonblank;
 DROP TABLE IF EXISTS agent_clusters;
 
 -- +goose StatementEnd

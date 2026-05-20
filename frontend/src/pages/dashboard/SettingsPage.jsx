@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
-import { FiSun, FiMoon } from 'react-icons/fi'
+import { useNavigate } from 'react-router-dom'
+import { FiAlertTriangle } from 'react-icons/fi'
 import { useAuth } from '../../context/AuthContext'
 import { apiFetch } from '../../utils/apiFetch'
+import { applyTheme, getStoredTheme } from '../../utils/theme'
 
 export default function SettingsPage() {
-  const { isAuthenticated, isReady } = useAuth()
+  const { isAuthenticated, isReady, logout } = useAuth()
+  const navigate = useNavigate()
 
-  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light')
+  const [theme, setTheme] = useState(getStoredTheme())
+
+  useEffect(() => {
+    applyTheme(theme)
+  }, [theme])
 
   const [currentUser, setCurrentUser] = useState(null)
   const [isLoadingUser, setIsLoadingUser] = useState(false)
@@ -17,20 +24,20 @@ export default function SettingsPage() {
 
   const [isSavingProfile, setIsSavingProfile] = useState(false)
   const [isSavingPassword, setIsSavingPassword] = useState(false)
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false)
 
   const [profileError, setProfileError] = useState('')
   const [passwordError, setPasswordError] = useState('')
+  const [deleteError, setDeleteError] = useState('')
   const [profileSuccess, setProfileSuccess] = useState('')
   const [passwordSuccess, setPasswordSuccess] = useState('')
 
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
-  useEffect(() => {
-    document.body.classList.remove('theme-light', 'theme-dark')
-    document.body.classList.add(theme === 'dark' ? 'theme-dark' : 'theme-light')
-    localStorage.setItem('theme', theme)
-    window.dispatchEvent(new Event('theme-change'))
-  }, [theme])
+  const notifyProfileUpdated = useCallback(() => {
+    window.dispatchEvent(new Event('user-profile-updated'))
+  }, [])
 
   const loadCurrentUser = useCallback(async () => {
     if (!isAuthenticated) return
@@ -114,12 +121,14 @@ export default function SettingsPage() {
 
     try {
       const updatedUser = await patchUser(body)
+
       if (updatedUser) {
         setCurrentUser(updatedUser)
       } else {
         await loadCurrentUser()
       }
 
+      notifyProfileUpdated()
       setProfileSuccess('Profile updated successfully')
       setName('')
       setEmail('')
@@ -165,58 +174,51 @@ export default function SettingsPage() {
     setShowPasswordConfirm(false)
   }
 
+  function handleDeleteAccountClick() {
+    setDeleteError('')
+    setShowDeleteConfirm(true)
+  }
+
+  function cancelDeleteAccount() {
+    if (isDeletingAccount) return
+    setShowDeleteConfirm(false)
+  }
+
+  async function confirmDeleteAccount() {
+    setDeleteError('')
+    setIsDeletingAccount(true)
+
+    try {
+      const res = await apiFetch('/api/users/me', {
+        method: 'DELETE',
+      })
+
+      const data = await res.json().catch(() => null)
+
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to delete account')
+      }
+
+      await logout()
+      navigate('/login', { replace: true })
+    } catch (err) {
+      setDeleteError(err.message || 'Failed to delete account')
+      setShowDeleteConfirm(false)
+    } finally {
+      setIsDeletingAccount(false)
+    }
+  }
+
   return (
     <>
       <div className="dashboard-header">
         <div>
-          <h1>Settings</h1>
-          <p>Manage appearance, account information, and security preferences.</p>
+          <h1>Account settings</h1>
+          <p>Manage account information and security preferences.</p>
         </div>
       </div>
 
       <section className="settings-panel settings-grid">
-        <div className="settings-card">
-          <h3>Appearance</h3>
-          <p>Choose the dashboard theme.</p>
-
-          <div className="theme-toggle">
-            <button
-              type="button"
-              className={`theme-button ${theme === 'light' ? 'active' : ''}`}
-              onClick={() => setTheme('light')}
-            >
-              <FiSun />
-              <span>Light</span>
-            </button>
-
-            <button
-              type="button"
-              className={`theme-button ${theme === 'dark' ? 'active' : ''}`}
-              onClick={() => setTheme('dark')}
-            >
-              <FiMoon />
-              <span>Dark</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="settings-card">
-          <h3>Account Overview</h3>
-          <p>View your current account identity.</p>
-
-          <div className="profile-current-info">
-            <div className="profile-current-row">
-              <span className="profile-current-label">Current username</span>
-              <strong>{isLoadingUser ? 'Loading...' : currentUser?.name || 'Unavailable'}</strong>
-            </div>
-
-            <div className="profile-current-row">
-              <span className="profile-current-label">Current email</span>
-              <strong>{isLoadingUser ? 'Loading...' : currentUser?.email || 'Unavailable'}</strong>
-            </div>
-          </div>
-        </div>
-
         <div className="settings-card">
           <h3>Account</h3>
           <p>Change your username and email.</p>
@@ -292,6 +294,25 @@ export default function SettingsPage() {
             </div>
           </form>
         </div>
+
+        <div className="settings-card danger-card">
+          <h3>Delete account</h3>
+          <p>Permanently delete your account. This action cannot be undone.</p>
+
+          {deleteError && <div className="form-error">{deleteError}</div>}
+
+          <div className="profile-actions">
+            <button
+              type="button"
+              className="danger-button"
+              onClick={handleDeleteAccountClick}
+              disabled={isDeletingAccount || isLoadingUser || !currentUser?.id}
+            >
+              <FiAlertTriangle />
+              <span>Delete my account</span>
+            </button>
+          </div>
+        </div>
       </section>
 
       {showPasswordConfirm && (
@@ -324,6 +345,43 @@ export default function SettingsPage() {
                 disabled={isSavingPassword}
               >
                 {isSavingPassword ? 'Saving...' : 'OK'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteConfirm && (
+        <div className="modal-backdrop">
+          <div className="modal-card profile-confirm-modal">
+            <div className="modal-header">
+              <div>
+                <h3>Confirm account deletion</h3>
+                <p>
+                  Are you sure you want to delete your account? This will permanently
+                  remove your user account and log you out.
+                </p>
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={cancelDeleteAccount}
+                disabled={isDeletingAccount}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className="danger-button"
+                onClick={confirmDeleteAccount}
+                disabled={isDeletingAccount}
+              >
+                <FiAlertTriangle />
+                <span>{isDeletingAccount ? 'Deleting...' : 'Delete account'}</span>
               </button>
             </div>
           </div>
