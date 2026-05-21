@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -47,21 +48,36 @@ type logoutRequest struct {
 	RefreshToken string `json:"refreshToken"`
 }
 
+type verifyEmailRequest struct {
+	Token string `json:"token"`
+}
+
+type resendVerificationRequest struct {
+	Email string `json:"email"`
+}
+
+type createUserResponse struct {
+	Message string       `json:"message"`
+	User    userResponse `json:"user,omitempty"`
+}
+
 type userResponse struct {
-	ID        int64     `json:"id"`
-	Name      string    `json:"name"`
-	Email     string    `json:"email"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID            int64     `json:"id"`
+	Name          string    `json:"name"`
+	Email         string    `json:"email"`
+	EmailVerified bool      `json:"email_verified"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 func toUserResponse(user *model.User) userResponse {
 	return userResponse{
-		ID:        user.ID,
-		Name:      user.Name,
-		Email:     user.Email,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
+		ID:            user.ID,
+		Name:          user.Name,
+		Email:         user.Email,
+		EmailVerified: user.EmailVerified,
+		CreatedAt:     user.CreatedAt,
+		UpdatedAt:     user.UpdatedAt,
 	}
 }
 
@@ -140,41 +156,110 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.userService.CreateUser(r.Context(), req.Name, req.Email, req.Password)
+	user, verifyToken, err := h.userService.CreateUserWithVerification(r.Context(), req.Name, req.Email, req.Password)
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
 
-	accessToken, refreshToken, err := h.userService.AuthenticateUser(r.Context(), req.Email, req.Password)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "user created but token generation failed")
-		return
+	publicURL := getPublicURL(r)
+	verifyLink := fmt.Sprintf("%s/verify-email?token=%s", publicURL, verifyToken)
+
+	if h.resendService != nil {
+		go func() {
+			if err := h.resendService.SendVerificationEmail(user.Email, user.Name, verifyLink); err != nil {
+				println("Failed to send verification email:", err.Error())
+			}
+		}()
 	}
 
-	w.Header().Set("Location", "/users/"+strconv.FormatInt(user.ID, 10))
-	writeJSON(w, http.StatusCreated, struct {
-		User         userResponse `json:"user"`
-		AccessToken  string       `json:"accessToken"`
-		RefreshToken string       `json:"refreshToken"`
-	}{
-		User:         toUserResponse(user),
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
+	writeJSON(w, http.StatusCreated, createUserResponse{
+		Message: "Registration successful. Please check your email to verify your account.",
+		User:    toUserResponse(user),
 	})
 }
 
-func requireSameUser(r *http.Request, targetUserID int64) error {
-	authUserID, ok := getAuthenticatedUserID(r)
-	if !ok || authUserID <= 0 {
-		return service.ErrInvalidCredentials
+// In your handler package, add this helper function
+func getPublicURL(r *http.Request) string {
+	scheme := "http"
+
+	// Check for HTTPS (important for production)
+	if r.TLS != nil {
+		scheme = "https"
 	}
 
-	if authUserID != targetUserID {
-		return errors.New("forbidden")
+	// Check for forwarded protocol (Cloudflare, reverse proxies)
+	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		scheme = proto
 	}
 
-	return nil
+	// Get host from request
+	host := r.Host
+
+	// Check for forwarded host (important for Cloudflare tunnel)
+	if forwardedHost := r.Header.Get("X-Forwarded-Host"); forwardedHost != "" {
+		host = forwardedHost
+	}
+
+	return fmt.Sprintf("%s://%s", scheme, host)
+}
+
+// VerifyEmail verifies a user's email address
+func (h *Handler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
+	var req verifyEmailRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.userService.VerifyEmail(r.Context(), req.Token); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"message": "Email verified successfully. You can now log in.",
+	})
+}
+
+func (h *Handler) ResendVerificationEmail(w http.ResponseWriter, r *http.Request) {
+	var req resendVerificationRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Email == "" {
+		writeError(w, http.StatusBadRequest, "email is required")
+		return
+	}
+
+	verifyToken, err := h.userService.ResendVerificationEmail(r.Context(), req.Email)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	user, err := h.userService.GetUserByEmail(r.Context(), req.Email)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	publicURL := getPublicURL(r)
+	verifyLink := fmt.Sprintf("%s/verify-email?token=%s", publicURL, verifyToken)
+
+	if h.resendService != nil {
+		go func() {
+			if err := h.resendService.SendVerificationEmail(user.Email, user.Name, verifyLink); err != nil {
+				println("Failed to send verification email:", err.Error())
+			}
+		}()
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"message": "Verification email sent. Please check your inbox.",
+	})
 }
 
 func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -287,10 +372,14 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		errors.Is(err, service.ErrInvalidToken),
 		errors.Is(err, service.ErrRefreshTokenExpired):
 		writeError(w, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, service.ErrEmailNotVerified):
+		writeError(w, http.StatusForbidden, "email not verified. Please verify your email before logging in.")
 	case errors.Is(err, service.ErrUserNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, service.ErrEmailAlreadyExists):
 		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, service.ErrInvalidVerificationToken):
+		writeError(w, http.StatusBadRequest, "invalid or expired verification token")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal server error")
 	}
@@ -310,4 +399,17 @@ func (h *Handler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, toUserResponse(user))
+}
+
+func requireSameUser(r *http.Request, targetUserID int64) error {
+	authUserID, ok := getAuthenticatedUserID(r)
+	if !ok || authUserID <= 0 {
+		return service.ErrInvalidCredentials
+	}
+
+	if authUserID != targetUserID {
+		return errors.New("forbidden")
+	}
+
+	return nil
 }

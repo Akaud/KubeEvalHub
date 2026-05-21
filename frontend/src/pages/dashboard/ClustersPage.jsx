@@ -13,6 +13,9 @@ import { apiFetch } from '../../utils/apiFetch'
 export default function ClustersPage() {
   const [clusters, setClusters] = useState([])
   const [agents, setAgents] = useState([])
+  const MAX_CLUSTERS = 3
+  const clusterCount = clusters.length
+  const canCreateCluster = clusterCount < MAX_CLUSTERS
 
   const [isLoadingClusters, setIsLoadingClusters] = useState(false)
   const [isLoadingAgents, setIsLoadingAgents] = useState(false)
@@ -285,6 +288,8 @@ export default function ClustersPage() {
   }
 
   const openCreateClusterModal = () => {
+    if (!canCreateCluster) return
+
     setClusterName('')
     setCreateClusterError('')
     setShowCreateClusterModal(true)
@@ -303,6 +308,11 @@ export default function ClustersPage() {
 
   const handleCreateCluster = async (e) => {
     e.preventDefault()
+
+    if (!canCreateCluster) {
+      setCreateClusterError(`You can create up to ${MAX_CLUSTERS} clusters.`)
+      return
+    }
 
     const trimmedName = clusterName.trim()
 
@@ -445,6 +455,9 @@ export default function ClustersPage() {
         <div>
           <h1>Clusters</h1>
           <p>Create cluster records, assign agents, manage delegated access, and open cluster views.</p>
+          <p className="agents-counter">
+            {clusterCount}/{MAX_CLUSTERS} clusters
+          </p>
         </div>
 
         <div className="dashboard-header-actions">
@@ -462,9 +475,11 @@ export default function ClustersPage() {
             className="primary-button"
             type="button"
             onClick={openCreateClusterModal}
+            disabled={!canCreateCluster}
+            title={!canCreateCluster ? `Maximum of ${MAX_CLUSTERS} clusters reached` : undefined}
           >
             <FiPlus />
-            <span>Create cluster</span>
+            <span>{canCreateCluster ? 'Create cluster' : 'Limit reached'}</span>
           </button>
         </div>
       </div>
@@ -601,7 +616,7 @@ export default function ClustersPage() {
                           type="button"
                           className="dashboard-nav-button"
                           onClick={() => handleShowInventory(cluster.id)}
-                          disabled={!isAssigned || !canViewReadOnly}
+                          disabled={!isAssigned || !canViewReadOnly || cluster.status !== 'online'}
                         >
                           Show inventory
                         </button>
@@ -610,7 +625,7 @@ export default function ClustersPage() {
                           type="button"
                           className="dashboard-nav-button"
                           onClick={() => handleShowRecommendations(cluster.id)}
-                          disabled={!isAssigned || !canUseAnalysis}
+                          disabled={!isAssigned || !canViewReadOnly || cluster.status !== 'online'}
                         >
                           Show recommendations
                         </button>
@@ -619,7 +634,7 @@ export default function ClustersPage() {
                           type="button"
                           className="dashboard-nav-button is-primary"
                           onClick={() => handleShowMetrics(cluster.id)}
-                          disabled={!isAssigned || !canViewReadOnly}
+                          disabled={!isAssigned || !canViewReadOnly || cluster.status !== 'online'}
                         >
                           Show metrics
                         </button>

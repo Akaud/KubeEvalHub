@@ -24,7 +24,10 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 	userRepo := repository.NewUserRepository(pool)
 	refreshTokenRepo := repository.NewRefreshTokenRepository(pool)
 	userService := service.NewUserService(userRepo, refreshTokenRepo, cfg.JWTSecret)
-	userHandler := handler.New(userService)
+
+	resendService := service.NewResendService(cfg)
+
+	userHandler := handler.New(userService, resendService)
 
 	jwtAuthMiddleware := handler.JWTAuthMiddleware(userService)
 
@@ -66,6 +69,9 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *http.Server {
 	r.Post("/auth/login", userHandler.Login)
 	r.Post("/auth/logout", userHandler.Logout)
 	r.Post("/auth/refresh", userHandler.RefreshToken)
+
+	r.Post("/auth/verify-email", userHandler.VerifyEmail)
+	r.Post("/auth/resend-verification", userHandler.ResendVerificationEmail)
 
 	r.Route("/users", func(r chi.Router) {
 		r.Post("/", userHandler.CreateUser)

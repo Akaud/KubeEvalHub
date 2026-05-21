@@ -310,7 +310,9 @@ func (s *metricService) ForecastClusterMetric(
 	if len(history) == 0 {
 		return nil, ErrInsufficientForecastData
 	}
-	history = winsorizeHistory(history, 0.05, 0.95)
+	if len(history) > 20 {
+		history = winsorizeHistory(history, 0.05, 0.95)
+	}
 
 	var (
 		forecast    []model.ForecastPoint
@@ -320,7 +322,7 @@ func (s *metricService) ForecastClusterMetric(
 
 	switch req.Model {
 	case "auto":
-		forecast, stepSeconds, modelName, err = forecastAuto(history, req.Steps)
+		forecast, stepSeconds, modelName, err = forecastAuto(history, req.Steps, series.MetricName)
 	case "last_value":
 		forecast, stepSeconds, err = forecastLastValue(history, req.Steps)
 		modelName = "last_value"
@@ -339,7 +341,7 @@ func (s *metricService) ForecastClusterMetric(
 		forecast, stepSeconds, err = forecastMovingAverage(history, req.Steps, 10)
 		modelName = "moving_average"
 	default:
-		forecast, stepSeconds, modelName, err = forecastAuto(history, req.Steps)
+		forecast, stepSeconds, modelName, err = forecastAuto(history, req.Steps, series.MetricName)
 	}
 	if err != nil {
 		return nil, err
@@ -355,6 +357,28 @@ func (s *metricService) ForecastClusterMetric(
 			StepSeconds:    stepSeconds,
 		},
 	}, nil
+}
+
+func defaultForecastWindow(historyLen int) int {
+	if historyLen <= 0 {
+		return 1
+	}
+
+	window := historyLen / 4
+
+	if window < 5 {
+		window = 5
+	}
+
+	if window > 20 {
+		window = 20
+	}
+
+	if window > historyLen {
+		window = historyLen
+	}
+
+	return window
 }
 
 func trimPtr(v *string) *string {
@@ -526,7 +550,7 @@ func forecastMovingAverage(
 		steps = 8
 	}
 	if window <= 0 {
-		window = 10
+		window = defaultForecastWindow(len(history))
 	}
 	if window > len(history) {
 		window = len(history)
@@ -564,7 +588,7 @@ func forecastWeightedMovingAverage(
 		steps = 8
 	}
 	if window <= 0 {
-		window = 10
+		window = defaultForecastWindow(len(history))
 	}
 	if window > len(history) {
 		window = len(history)
@@ -813,27 +837,27 @@ func bestDampedHoltRunner() forecastRunner {
 func forecastAuto(
 	history []model.MetricSeriesPoint,
 	steps int,
+	metricName string,
 ) ([]model.ForecastPoint, int64, string, error) {
 	if len(history) < 3 {
 		return nil, 0, "", ErrInsufficientForecastData
 	}
 
+	metricName = strings.ToLower(strings.TrimSpace(metricName))
+	window := defaultForecastWindow(len(history))
+
 	candidates := []forecastCandidate{
-		{
-			name: "last_value",
-			run: func(h []model.MetricSeriesPoint, s int) ([]model.ForecastPoint, int64, error) {
-				return forecastLastValue(h, s)
-			},
-		},
 		{
 			name: "weighted_moving_average",
 			run: func(h []model.MetricSeriesPoint, s int) ([]model.ForecastPoint, int64, error) {
-				return forecastWeightedMovingAverage(h, s, minInt(12, len(h)))
+				return forecastWeightedMovingAverage(h, s, defaultForecastWindow(len(h)))
 			},
 		},
 		{
-			name: "holt_linear",
-			run:  bestHoltLinearRunner(),
+			name: "moving_average",
+			run: func(h []model.MetricSeriesPoint, s int) ([]model.ForecastPoint, int64, error) {
+				return forecastMovingAverage(h, s, defaultForecastWindow(len(h)))
+			},
 		},
 		{
 			name: "damped_holt",
@@ -841,9 +865,16 @@ func forecastAuto(
 		},
 	}
 
+	if !strings.Contains(metricName, "cpu") {
+		candidates = append(candidates, forecastCandidate{
+			name: "holt_linear",
+			run:  bestHoltLinearRunner(),
+		})
+	}
+
 	holdout := minInt(maxInt(len(history)/5, 3), 12)
 	if len(history) < holdout+3 {
-		pred, step, err := forecastWeightedMovingAverage(history, steps, minInt(10, len(history)))
+		pred, step, err := forecastWeightedMovingAverage(history, steps, window)
 		return pred, step, "weighted_moving_average", err
 	}
 
@@ -859,6 +890,7 @@ func forecastAuto(
 		if err != nil {
 			continue
 		}
+
 		score := scoreForecast(test, pred)
 		if score < bestScore {
 			bestScore = score
@@ -868,7 +900,8 @@ func forecastAuto(
 	}
 
 	if bestRunner == nil {
-		return nil, 0, "", ErrInsufficientForecastData
+		pred, step, err := forecastWeightedMovingAverage(history, steps, window)
+		return pred, step, "weighted_moving_average", err
 	}
 
 	pred, step, err := bestRunner(history, steps)

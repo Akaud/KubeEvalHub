@@ -20,6 +20,9 @@ const getPublicBackendUrl = () => {
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState([])
+  const MAX_AGENTS = 3
+  const agentCount = agents.length
+  const canCreateAgent = agentCount < MAX_AGENTS
 
   const [isLoadingAgents, setIsLoadingAgents] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -188,6 +191,8 @@ spec:
   }, [isReady, isAuthenticated])
 
   const openCreateAgentModal = () => {
+    if (!canCreateAgent) return
+
     setAgentName('')
     setScrapeInterval(30)
     setCreateAgentError('')
@@ -208,6 +213,10 @@ spec:
 
   const handleCreateAgent = async (e) => {
     e.preventDefault()
+    if (!canCreateAgent) {
+      setCreateAgentError(`You can create up to ${MAX_AGENTS} agents.`)
+      return
+    }
 
     const trimmedName = agentName.trim()
 
@@ -338,6 +347,9 @@ spec:
         <div>
           <h1>Agents</h1>
           <p>Create agents, copy installer YAML, and manage ingestion state.</p>
+          <p className="agents-counter">
+            {agentCount}/{MAX_AGENTS} agents
+          </p>
         </div>
 
         <div className="dashboard-header-actions">
@@ -355,9 +367,11 @@ spec:
             className="primary-button"
             type="button"
             onClick={openCreateAgentModal}
+            disabled={!canCreateAgent}
+            title={!canCreateAgent ? `Maximum of ${MAX_AGENTS} agents reached` : undefined}
           >
             <FiPlus />
-            <span>Create agent</span>
+            <span>{canCreateAgent ? 'Create agent' : 'Limit reached'}</span>
           </button>
         </div>
       </div>

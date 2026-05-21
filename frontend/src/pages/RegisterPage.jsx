@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { FiEye, FiEyeOff } from 'react-icons/fi'
 import '../styles/RegisterPage.css'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
 
 export default function RegisterPage() {
   const [form, setForm] = useState({
@@ -17,26 +16,29 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState('')
-  const [toast, setToast] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const navigate = useNavigate()
-  const { login } = useAuth()
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
   useEffect(() => {
-    if (!toast) return
+    if (!successMessage) return
 
     const timer = setTimeout(() => {
-      setToast('')
-    }, 1500)
+      setSuccessMessage('')
+      // Redirect to login page with a message
+      navigate('/login', { 
+        state: { message: 'Registration successful! Please check your email to verify your account.' }
+      })
+    }, 3000)
 
     return () => clearTimeout(timer)
-  }, [toast])
+  }, [successMessage, navigate])
 
   const handleChange = (e) => {
-    const { name, value, type, checked } = e.target
-    let nextValue = type === 'checkbox' ? checked : value
+    const { name, value } = e.target
+    let nextValue = value
 
     if (name === 'username') {
       nextValue = nextValue.replace(/\s/g, '')
@@ -72,7 +74,7 @@ export default function RegisterPage() {
     const confirmPassword = form.confirmPassword
 
     setError('')
-    setToast('')
+    setSuccessMessage('')
 
     if (!username || !email || !password || !confirmPassword) {
       setError('All fields are required')
@@ -86,6 +88,11 @@ export default function RegisterPage() {
 
     if (password !== confirmPassword) {
       setError('Passwords do not match')
+      return
+    }
+
+    if (password.length < 12) {
+      setError('Password must be at least 12 characters')
       return
     }
 
@@ -105,19 +112,21 @@ export default function RegisterPage() {
       const data = await res.json().catch(() => null)
 
       if (!res.ok) {
-        setError(data?.error || 'Registration failed')
+        if (res.status === 409) {
+          setError('Email already exists. Please use a different email or login.')
+        } else if (data?.error) {
+          setError(data.error)
+        } else {
+          setError('Registration failed')
+        }
         return
       }
 
-      if (!data?.accessToken || !data?.refreshToken) {
-        setError('Registration response is invalid')
-        return
-      }
-
-      login(data.accessToken, data.refreshToken)
-      navigate('/dashboard/profile', { replace: true })
+      // Registration successful - show success message
+      setSuccessMessage(data?.message || 'Registration successful! Redirecting to login...')
+      
     } catch {
-      setError('Network error')
+      setError('Network error. Please try again.')
     } finally {
       setIsSubmitting(false)
     }
@@ -125,7 +134,17 @@ export default function RegisterPage() {
 
   return (
     <div className="auth-container">
-      {toast && <div className="toast toast-success">{toast}</div>}
+      {successMessage && (
+        <div className="toast toast-success">
+          {successMessage}
+        </div>
+      )}
+      
+      {error && (
+        <div className="toast toast-error">
+          {error}
+        </div>
+      )}
 
       <form className="auth-form" onSubmit={handleSubmit}>
         <h1>Register</h1>
@@ -153,18 +172,18 @@ export default function RegisterPage() {
             required
             maxLength={254}
           />
-          {isEmailValid && <span className="check">✔</span>}
+          {isEmailValid && form.email && <span className="check">✔</span>}
         </div>
 
         <div className="input-group">
           <input
             type={showPassword ? 'text' : 'password'}
             name="password"
-            placeholder="Password"
+            placeholder="Password (min. 12 characters)"
             value={form.password}
             onChange={handleChange}
             required
-            minLength={8}
+            minLength={12}
           />
           <span
             className="eye"
@@ -182,7 +201,7 @@ export default function RegisterPage() {
             value={form.confirmPassword}
             onChange={handleChange}
             required
-            minLength={8}
+            minLength={12}
           />
           <span
             className="eye"
@@ -195,8 +214,6 @@ export default function RegisterPage() {
         {!passwordsMatch && (
           <p className="error-text">Passwords do not match</p>
         )}
-
-        {error && <p className="error-text">{error}</p>}
 
         <button type="submit" disabled={isSubmitting}>
           {isSubmitting ? 'Registering...' : 'Register'}

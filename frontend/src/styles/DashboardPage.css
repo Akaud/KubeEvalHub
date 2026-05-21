@@ -2288,3 +2288,9 @@ body.theme-dark {
 .dashboard-layout-dark .danger-button:hover:not(:disabled) {
   background: #b91c1c;
 }
+
+.agents-counter {
+  margin-top: 0.35rem;
+  font-size: 0.875rem;
+  color: var(--muted-text);
+}

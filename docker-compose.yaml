@@ -38,6 +38,11 @@ services:
       READ_TIMEOUT: 5s
       WRITE_TIMEOUT: 10s
       IDLE_TIMEOUT: 60s
+
+      RESEND_API_KEY: 
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-onboarding@resend.dev}
+      RESEND_FROM_NAME: ${RESEND_FROM_NAME:-Kube}
+
     ports:
       - "5000:5000"
     networks:
@@ -64,6 +69,7 @@ services:
       - "8080:80"
     networks:
       - public
+
 volumes:
   postgres_data:
 

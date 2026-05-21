@@ -18,24 +18,40 @@ const NONE_KEY = '__none__'
 
 const PREDICTION_MODELS = [
   {
-    value: 'moving_average',
-    label: 'Moving average',
-    description: 'Uses the recent average level. Best for noisy metrics with no strong trend. Usually the safest default.',
+    value: 'auto',
+    label: 'Auto',
+    description:
+      'Selects the best available model using recent historical accuracy. Recommended default.',
   },
   {
-    value: 'last_value',
-    label: 'Last value',
-    description: 'Assumes the next values will stay near the latest observed value. Best for stable or flat metrics.',
+    value: 'weighted_moving_average',
+    label: 'Weighted moving average',
+    description:
+      'Uses recent samples with more weight on newer values. Good for noisy metrics such as CPU usage.',
+  },
+  {
+    value: 'moving_average',
+    label: 'Moving average',
+    description:
+      'Uses the recent average level. Stable, but less responsive to recent changes.',
   },
   {
     value: 'damped_holt',
     label: 'Damped trend',
-    description: 'Follows the recent trend, but gradually weakens it over time. Better than linear trend when growth or decline should not explode.',
+    description:
+      'Follows the recent trend while reducing extreme extrapolation.',
   },
   {
     value: 'holt_linear',
     label: 'Linear trend',
-    description: 'Projects the recent trend forward at full strength. Best only when the metric has a clear steady trend.',
+    description:
+      'Projects the recent trend forward at full strength. Can overreact to short spikes.',
+  },
+  {
+    value: 'last_value',
+    label: 'Baseline',
+    description:
+      'Repeats the latest observed value. Useful as a baseline, not as a trend prediction.',
   },
 ]
 
@@ -215,7 +231,7 @@ export default function ClusterMetricsDetailPage() {
 
   const [predictionHistoryLimit, setPredictionHistoryLimit] = useState(120)
   const [predictionSteps, setPredictionSteps] = useState(8)
-  const [predictionModel, setPredictionModel] = useState('moving_average')
+  const [predictionModel, setPredictionModel] = useState('auto')
 
   const canUsePrediction = useMemo(() => {
     const myRole = cluster?.myRole || 'none'
@@ -670,9 +686,10 @@ export default function ClusterMetricsDetailPage() {
                   <h3>{buildSeriesTitle(selectedItem.series)}</h3>
                   <p>
                     Type: {selectedItem.series.metricType} | Unit: {selectedItem.series.unit}
-                    {canUsePrediction && showPrediction && forecast?.model?.name ? ` | Model: ${forecast.model.name}` : ''}
+                    {canUsePrediction && showPrediction && forecast?.model?.name
+                      ? ` | Selected model: ${forecast.model.name.replaceAll('_', ' ')}`
+                      : ''}                  
                   </p>
-
                   <div className="metrics-chart-wrapper">
                     <ResponsiveContainer width="100%" height={360}>
                       <ComposedChart data={chartData}>

@@ -202,3 +202,37 @@
     border-radius: 18px;
   }
 }
+
+.help-guide-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.75fr) minmax(420px, 1.25fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.help-guide-left {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.help-guide-layout .help-guidance-card {
+  margin-top: 0;
+}
+
+.help-checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.help-checklist li svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+@media (max-width: 900px) {
+  .help-guide-layout {
+    grid-template-columns: 1fr;
+  }
+}

@@ -9,13 +9,13 @@ import {
   FiHelpCircle,
   FiLogOut,
   FiSearch,
-  FiBell,
   FiUser,
   FiChevronDown,
   FiSun,
   FiMoon,
   FiBox,
   FiCpu,
+  FiBookOpen,
 } from 'react-icons/fi'
 import {
   dashboardSearchItems,
@@ -226,6 +226,16 @@ export default function DashboardLayout() {
             </NavLink>
 
             <NavLink
+              to="/dashboard/guide"
+              className={({ isActive }) =>
+                `sidebar-item ${isActive ? 'active' : ''}`
+              }
+            >
+              <FiBookOpen />
+              <span>Guide</span>
+            </NavLink>
+
+            <NavLink
               to="/dashboard/help"
               className={({ isActive }) =>
                 `sidebar-item ${isActive ? 'active' : ''}`
@@ -260,7 +270,6 @@ export default function DashboardLayout() {
                 }}
                 onFocus={() => setIsSearchOpen(true)}
               />
-              <span className="dashboard-search-shortcut">⌘ F</span>
             </div>
 
             {isSearchOpen && searchQuery.trim() && (
@@ -289,14 +298,6 @@ export default function DashboardLayout() {
           </div>
 
           <div className="dashboard-topbar-actions">
-            <button
-              type="button"
-              className="dashboard-icon-button"
-              aria-label="Notifications"
-            >
-              <FiBell />
-            </button>
-
             <div className="dashboard-user-dropdown" ref={dropdownRef}>
               <button
                 type="button"

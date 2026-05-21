@@ -20,6 +20,10 @@ type Config struct {
 	DBName     string
 	DBSSLMode  string
 	JWTSecret  string
+
+	ResendAPIKey    string
+	ResendFromEmail string
+	ResendFromName  string
 }
 
 func Load() *Config {
@@ -36,7 +40,12 @@ func Load() *Config {
 		DBName:     mustGetEnv("DB_NAME"),
 		DBSSLMode:  mustGetEnv("DB_SSLMODE"),
 		JWTSecret:  mustGetEnv("JWT_SECRET"),
+
+		ResendAPIKey:    os.Getenv("RESEND_API_KEY"),
+		ResendFromEmail: getEnvOrDefault("RESEND_FROM_EMAIL", "onboarding@resend.dev"),
+		ResendFromName:  getEnvOrDefault("RESEND_FROM_NAME", "KubeEvalHub"),
 	}
+
 	return cfg
 }
 
@@ -65,6 +74,13 @@ func mustGetDuration(key string) time.Duration {
 	panic(fmt.Sprintf("%s must be a valid positive duration", key))
 }
 
+func getEnvOrDefault(key, defaultValue string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return defaultValue
+}
+
 func (c *Config) DatabaseURL() string {
 	auth := c.DBUser
 	if c.DBPassword != "" {
@@ -79,4 +95,8 @@ func (c *Config) DatabaseURL() string {
 		c.DBName,
 		c.DBSSLMode,
 	)
+}
+
+func (c *Config) IsResendConfigured() bool {
+	return c.ResendAPIKey != "" && c.ResendFromEmail != ""
 }

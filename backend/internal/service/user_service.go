@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base32"
 	"encoding/hex"
 	"errors"
 	"strings"
@@ -16,26 +17,32 @@ import (
 )
 
 var (
-	ErrInvalidUserID          = errors.New("invalid user id")
-	ErrInvalidUserName        = errors.New("invalid user name")
-	ErrInvalidUserEmail       = errors.New("invalid user email")
-	ErrInvalidUserPassword    = errors.New("invalid user password")
-	ErrInvalidCredentials     = errors.New("invalid credentials")
-	ErrInvalidLoginIdentifier = errors.New("invalid login identifier")
-	ErrInvalidToken           = errors.New("invalid token")
-	ErrRefreshTokenExpired    = errors.New("refresh token expired")
-	ErrUserNotFound           = errors.New("user not found")
-	ErrEmailAlreadyExists     = errors.New("email already exists")
+	ErrInvalidUserID            = errors.New("invalid user id")
+	ErrInvalidUserName          = errors.New("invalid user name")
+	ErrInvalidUserEmail         = errors.New("invalid user email")
+	ErrInvalidUserPassword      = errors.New("invalid user password")
+	ErrInvalidCredentials       = errors.New("invalid credentials")
+	ErrInvalidLoginIdentifier   = errors.New("invalid login identifier")
+	ErrInvalidToken             = errors.New("invalid token")
+	ErrRefreshTokenExpired      = errors.New("refresh token expired")
+	ErrUserNotFound             = errors.New("user not found")
+	ErrEmailAlreadyExists       = errors.New("email already exists")
+	ErrEmailNotVerified         = errors.New("email not verified")
+	ErrInvalidVerificationToken = errors.New("invalid or expired verification token")
 )
 
 type UserRepository interface {
 	Create(ctx context.Context, name, email, password string) (*model.User, error)
+	CreateWithVerification(ctx context.Context, name, email, passwordHash, verifyToken string, tokenExpiry time.Time) (*model.User, error)
 	GetByEmail(ctx context.Context, email string) (*model.User, error)
+	GetByEmailVerified(ctx context.Context, email string) (*model.User, error)
 	GetByName(ctx context.Context, name string) (*model.User, error)
 	GetByID(ctx context.Context, id int64) (*model.User, error)
 	Update(ctx context.Context, id int64, name, email, password string) (*model.User, error)
 	Delete(ctx context.Context, id int64) error
 	Patch(ctx context.Context, id int64, name, email, password *string) (*model.User, error)
+	VerifyEmail(ctx context.Context, token string) (*model.User, error)
+	UpdateVerificationToken(ctx context.Context, userID int64, token string, expiry time.Time) error
 }
 
 type RefreshTokenRepository interface {
@@ -102,6 +109,14 @@ func hashPassword(password string) (string, error) {
 	return string(hashed), nil
 }
 
+func generateEmailVerifyToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b), nil
+}
+
 func (s *UserService) CreateUser(ctx context.Context, name, email, password string) (*model.User, error) {
 	name, err := normalizeName(name)
 	if err != nil {
@@ -134,6 +149,110 @@ func (s *UserService) CreateUser(ctx context.Context, name, email, password stri
 	}
 
 	return user, nil
+}
+
+func (s *UserService) CreateUserWithVerification(ctx context.Context, name, email, password string) (*model.User, string, error) {
+	name, err := normalizeName(name)
+	if err != nil {
+		return nil, "", err
+	}
+
+	email, err = normalizeEmail(email)
+	if err != nil {
+		return nil, "", err
+	}
+
+	password, err = normalizePassword(password)
+	if err != nil {
+		return nil, "", err
+	}
+
+	existingUser, _ := s.repo.GetByEmail(ctx, email)
+	if existingUser != nil && existingUser.EmailVerified {
+		return nil, "", ErrEmailAlreadyExists
+	}
+
+	hashedPassword, err := hashPassword(password)
+	if err != nil {
+		return nil, "", err
+	}
+
+	verifyToken, err := generateEmailVerifyToken()
+	if err != nil {
+		return nil, "", err
+	}
+
+	tokenExpiry := time.Now().UTC().Add(24 * time.Hour)
+
+	var user *model.User
+	if existingUser != nil && !existingUser.EmailVerified {
+		err = s.repo.UpdateVerificationToken(ctx, existingUser.ID, verifyToken, tokenExpiry)
+		if err != nil {
+			return nil, "", err
+		}
+		user = existingUser
+		user.SetVerificationToken(verifyToken, tokenExpiry, time.Now().UTC())
+	} else {
+		user, err = s.repo.CreateWithVerification(ctx, name, email, hashedPassword, verifyToken, tokenExpiry)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+
+	return user, verifyToken, nil
+}
+
+func (s *UserService) VerifyEmail(ctx context.Context, token string) error {
+	if token == "" {
+		return ErrInvalidVerificationToken
+	}
+
+	user, err := s.repo.VerifyEmail(ctx, token)
+	if err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return ErrInvalidVerificationToken
+		}
+		return err
+	}
+
+	if user == nil {
+		return ErrInvalidVerificationToken
+	}
+
+	return nil
+}
+
+func (s *UserService) ResendVerificationEmail(ctx context.Context, email string) (string, error) {
+	email, err := normalizeEmail(email)
+	if err != nil {
+		return "", err
+	}
+
+	user, err := s.repo.GetByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return "", ErrUserNotFound
+		}
+		return "", err
+	}
+
+	if user.EmailVerified {
+		return "", ErrEmailAlreadyExists
+	}
+
+	verifyToken, err := generateEmailVerifyToken()
+	if err != nil {
+		return "", err
+	}
+
+	tokenExpiry := time.Now().UTC().Add(24 * time.Hour)
+
+	err = s.repo.UpdateVerificationToken(ctx, user.ID, verifyToken, tokenExpiry)
+	if err != nil {
+		return "", err
+	}
+
+	return verifyToken, nil
 }
 
 func (s *UserService) GetUserByID(ctx context.Context, id int64) (*model.User, error) {
@@ -319,7 +438,7 @@ func (s *UserService) AuthenticateUser(ctx context.Context, identifier, password
 			return "", "", ErrInvalidCredentials
 		}
 
-		user, err = s.repo.GetByEmail(ctx, email)
+		user, err = s.repo.GetByEmailVerified(ctx, email)
 		if err != nil {
 			if errors.Is(err, repository.ErrUserNotFound) {
 				return "", "", ErrInvalidCredentials
@@ -338,6 +457,10 @@ func (s *UserService) AuthenticateUser(ctx context.Context, identifier, password
 				return "", "", ErrInvalidCredentials
 			}
 			return "", "", err
+		}
+
+		if !user.EmailVerified {
+			return "", "", ErrEmailNotVerified
 		}
 	}
 
@@ -427,6 +550,10 @@ func (s *UserService) RefreshToken(ctx context.Context, rawRefreshToken string) 
 		return "", "", err
 	}
 
+	if !user.EmailVerified {
+		return "", "", ErrEmailNotVerified
+	}
+
 	newAccessToken, err := s.generateAccessToken(user)
 	if err != nil {
 		return "", "", err
@@ -466,4 +593,21 @@ func (s *UserService) RevokeRefreshToken(ctx context.Context, rawRefreshToken st
 	}
 
 	return nil
+}
+
+func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
+	email, err := normalizeEmail(email)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err := s.repo.GetByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return nil, ErrUserNotFound
+		}
+		return nil, err
+	}
+
+	return user, nil
 }

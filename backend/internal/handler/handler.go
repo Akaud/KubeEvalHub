@@ -2,13 +2,14 @@ package handler
 
 import "backend/internal/service"
 
-// Handler groups all HTTP handlers and their dependencies.
 type Handler struct {
-	userService *service.UserService
+	userService   *service.UserService
+	resendService *service.ResendService
 }
 
-func New(userService *service.UserService) *Handler {
+func New(userService *service.UserService, resendService *service.ResendService) *Handler {
 	return &Handler{
-		userService: userService,
+		userService:   userService,
+		resendService: resendService,
 	}
 }
