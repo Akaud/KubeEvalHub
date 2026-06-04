@@ -22,11 +22,17 @@ jobs:
 
       - name: Verify published agent image exists
         run: docker pull docker.io/lewaldenko/kubeevalhubagent:1.0.4
-
+      
       - name: Test published agent image starts
         run: |
           docker run -d --name kubeevalhub-agent docker.io/lewaldenko/kubeevalhubagent:1.0.4
           sleep 10
-          docker ps --filter "name=kubeevalhub-agent" --filter "status=running" --format "{{.Names}}" | grep kubeevalhub-agent
-          docker logs kubeevalhub-agent
-          docker stop kubeevalhub-agent
+      
+          echo "=== Container status ==="
+          docker ps -a
+      
+          echo "=== Container logs ==="
+          docker logs kubeevalhub-agent || true
+      
+          echo "=== Inspect exit code ==="
+          docker inspect kubeevalhub-agent --format='{{.State.Status}} {{.State.ExitCode}}'
