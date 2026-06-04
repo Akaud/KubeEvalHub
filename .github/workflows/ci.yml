@@ -16,3 +16,17 @@ jobs:
 
       - name: Build frontend Docker image
         run: docker build -t kubeevalhub-frontend ./frontend
+
+      - name: Build agent Docker image
+        run: docker build -t kubeevalhub-agent ./agent
+
+      - name: Verify published agent image exists
+        run: docker pull docker.io/lewaldenko/kubeevalhubagent:1.0.4
+
+      - name: Test published agent image starts
+        run: |
+          docker run -d --name kubeevalhub-agent docker.io/lewaldenko/kubeevalhubagent:1.0.4
+          sleep 10
+          docker ps --filter "name=kubeevalhub-agent" --filter "status=running" --format "{{.Names}}" | grep kubeevalhub-agent
+          docker logs kubeevalhub-agent
+          docker stop kubeevalhub-agent
